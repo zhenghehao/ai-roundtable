@@ -1,28 +1,50 @@
-# AI圆桌
+# AI Roundtable
 
-AI圆桌是一个本地优先的中文 AI 群聊讨论应用。用户可以配置不同大模型 API，创建多个 AI 角色，再把角色加入不同群聊房间，让它们像群聊一样围绕话题轮流讨论，并生成总结。
+[中文说明](./README.zh-CN.md)
 
-第一版不需要登录，也不需要数据库。模型配置、角色、房间和聊天记录都保存在浏览器 `localStorage` 中。
+AI Roundtable is a local-first multi-agent discussion app. It lets you configure model providers, create AI roles, start roundtable-style group discussions, and generate structured summaries.
 
-## 功能特点
+The first version is designed for local, single-user use. No login, database, or cloud sync is required. Provider configs, roles, rooms, and chat history are stored in browser `localStorage`.
 
-- 模型供应商配置：支持 OpenAI Compatible 和 Anthropic Claude。
-- 内置供应商模板：OpenAI、DeepSeek、通义千问、Kimi、GLM、豆包、千帆、混元、MiniMax、StepFun、Gemini、Grok、Claude 等。
-- 角色管理：支持自定义角色身份、发言风格、头像颜色、本地头像、默认模型。
-- 多群聊房间：每个房间有独立角色、轮数和聊天记录。
-- 圆桌讨论：角色按顺序轮流发言，可继续一轮、停止、生成总结。
-- 历史记录：支持导出 JSON、Markdown、TXT，也支持导入 JSON。
-- 多语言界面：支持中文、英语、日语、西班牙语、法语、德语、葡萄牙语、俄语、阿拉伯语、韩语、意大利语、荷兰语。
-- 桌面打包：支持生成 macOS 和 Windows 版本。
+## Why AI Roundtable?
 
-## 隐私说明
+Most AI chat tools are built around one assistant. AI Roundtable is built around a group of roles.
 
-- API Key 只保存在当前浏览器或本地桌面应用环境。
-- 项目不包含登录、数据库或云同步。
-- 不会把 API Key 写入服务端数据库，也不会主动打印到控制台。
-- 请不要把自己的 `.env`、打包产物或包含个人 API Key 的浏览器数据提交到 GitHub。
+You can create a host, product manager, technical expert, skeptic, summarizer, creative advisor, or any role you need. Then you can let them discuss a topic in turns, like a small roundtable meeting.
 
-## 技术栈
+It is useful for:
+
+- Product reviews
+- Startup idea evaluation
+- Technical design discussions
+- Writing and content brainstorming
+- Decision making
+- Risk analysis
+- Meeting-style summaries
+
+## Features
+
+- Local-first storage for model configs, roles, rooms, and chat history.
+- Model provider management with API key, Base URL, protocol, default model, and notes.
+- Supports OpenAI Compatible and Anthropic Claude protocols.
+- Built-in provider templates for OpenAI, DeepSeek, Qwen, Kimi, GLM, Doubao, Qianfan, Hunyuan, MiniMax, StepFun, Gemini, Grok, Claude, and more.
+- Custom AI roles with identity prompts, speaking style, avatar color, local avatar image, provider, and model.
+- Multiple chat rooms with independent participants, rounds, and history.
+- Roundtable discussion flow where enabled roles speak in order.
+- Continue one more round, stop generation, clear a room, copy/delete messages, and generate summaries.
+- Export chat history as JSON, Markdown, or TXT.
+- Import JSON history back into a room.
+- Multi-language UI, including English, Simplified Chinese, Traditional Chinese, Japanese, Spanish, French, German, Portuguese, Russian, Arabic, Korean, Italian, and Dutch.
+- Desktop packaging for macOS and Windows through Electron.
+
+## Privacy
+
+- API keys are stored only in your local browser or local desktop app environment.
+- There is no login system, database, or cloud sync in the first version.
+- The app does not store API keys on a server and does not intentionally print them to the console.
+- Do not commit `.env` files, release builds, or browser data containing personal API keys.
+
+## Tech Stack
 
 - Next.js
 - React
@@ -31,50 +53,50 @@ AI圆桌是一个本地优先的中文 AI 群聊讨论应用。用户可以配�
 - Electron
 - localStorage
 
-## 本地开发
+## Getting Started
 
 ```bash
 npm install
 npm run dev
 ```
 
-默认开发地址通常是：
+The local development URL is usually:
 
 ```text
 http://localhost:3000
 ```
 
-如果端口被占用，可以指定新端口：
+If the port is already in use, choose another port:
 
 ```bash
 npm run dev -- -p 3001
 ```
 
-## 构建网页版本
+## Build Web App
 
 ```bash
 npm run build
 ```
 
-构建结果会输出到 `out/` 目录。
+The static output is generated in `out/`.
 
-## 打包桌面应用
+## Build Desktop Apps
 
-macOS：
+macOS:
 
 ```bash
 npm run dist:mac
 ```
 
-Windows：
+Windows:
 
 ```bash
 npm run dist:win
 ```
 
-生成结果会放在 `release/` 目录。建议不要把 `release/` 提交到源码仓库，可以把安装包上传到 GitHub Releases。
+Build artifacts are generated in `release/`. Do not commit `release/` to the source repository. Upload desktop packages to GitHub Releases instead.
 
-## 项目结构
+## Project Structure
 
 ```text
 src/
@@ -95,12 +117,14 @@ electron/
 scripts/
 ```
 
-## 开源发布建议
+## Roadmap Ideas
 
-1. 在 GitHub 创建一个公开仓库，例如 `ai-roundtable`。
-2. 只提交源码和配置文件，不提交 `node_modules/`、`.next/`、`out/`、`release/`。
-3. 把 macOS / Windows 安装包上传到 GitHub Releases。
-4. 在 README 中放几张界面截图，会更方便别人理解项目。
+- Streaming model responses.
+- More discussion templates.
+- Better role presets for product, engineering, writing, research, and business scenarios.
+- Exportable meeting reports.
+- Screenshot and demo video assets for the README.
+- Optional cloud sync or team mode in the future.
 
 ## License
 
