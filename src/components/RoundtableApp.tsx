@@ -1,0 +1,634 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Atom } from "lucide-react";
+import { ChatView } from "@/components/chat/ChatView";
+import { NewRoomDialog } from "@/components/chat/NewRoomDialog";
+import { HistoryView } from "@/components/history/HistoryView";
+import { ProvidersView } from "@/components/providers/ProvidersView";
+import { RolesView } from "@/components/roles/RolesView";
+import { SettingsView } from "@/components/settings/SettingsView";
+import { type AppView, Sidebar } from "@/components/Sidebar";
+import { I18nProvider } from "@/lib/i18n-context";
+import { createTranslator } from "@/lib/i18n";
+import {
+  buildRoleSystemPrompt,
+  buildSummarySystemPrompt,
+  getDiscussionRoles,
+  getSummaryRole,
+  messagesToModelMessages
+} from "@/lib/chat";
+import { callModel, toFriendlyError } from "@/lib/model-adapters";
+import { createDefaultAppState } from "@/lib/defaults";
+import {
+  loadAppState,
+  parseImportedMessages,
+  resetAppState,
+  saveAppState,
+  serializeRoomAsJson,
+  serializeRoomAsMarkdown,
+  serializeRoomAsText
+} from "@/lib/storage/app-storage";
+import type { AgentRole, AppState, ChatMessage, ChatRoom, ProviderConfig } from "@/lib/types";
+import { copyText, createId, downloadText, nowIso } from "@/lib/utils";
+
+export function RoundtableApp() {
+  const [state, setState] = useState<AppState>(() => createDefaultAppState());
+  const [loaded, setLoaded] = useState(false);
+  const [activeView, setActiveView] = useState<AppView>("chat");
+  const [isRunning, setIsRunning] = useState(false);
+  const [speakingRoleId, setSpeakingRoleId] = useState<string | undefined>();
+  const [notice, setNotice] = useState("");
+  const [newRoomOpen, setNewRoomOpen] = useState(false);
+  const stateRef = useRef(state);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    setState(loadAppState());
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    stateRef.current = state;
+    if (loaded) {
+      saveAppState(state);
+    }
+  }, [loaded, state]);
+
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => setNotice(""), 2600);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  if (!loaded) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#eef1f6] px-6 text-center">
+        <div>
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#282b38] text-[#c7fbff] shadow-soft">
+            <Atom className="h-8 w-8" />
+          </div>
+          <h1 className="text-xl font-semibold text-gray-950">AI圆桌</h1>
+          <p className="mt-2 text-sm text-gray-500">正在准备本地数据...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId) || state.rooms[0];
+  const t = createTranslator(state.settings.language);
+
+  const updateRooms = (updater: (rooms: ChatRoom[]) => ChatRoom[], activeRoomId = stateRef.current.activeRoomId) => {
+    setState((current) => ({
+      ...current,
+      rooms: updater(current.rooms),
+      activeRoomId
+    }));
+  };
+
+  const updateRoom = (room: ChatRoom) => {
+    updateRooms((rooms) =>
+      rooms.map((item) =>
+        item.id === room.id
+          ? {
+              ...room,
+              updatedAt: nowIso()
+            }
+          : item
+      )
+    );
+  };
+
+  const commitMessages = (roomId: string, messages: ChatMessage[]) => {
+    updateRooms((rooms) =>
+      rooms.map((room) =>
+        room.id === roomId
+          ? {
+              ...room,
+              messages,
+              updatedAt: nowIso()
+            }
+          : room
+      )
+    );
+  };
+
+  const showNotice = (message: string) => setNotice(message);
+
+  const saveProvider = (provider: ProviderConfig) => {
+    setState((current) => {
+      const exists = current.providers.some((item) => item.id === provider.id);
+      return {
+        ...current,
+        providers: exists
+          ? current.providers.map((item) => (item.id === provider.id ? provider : item))
+          : [...current.providers, provider]
+      };
+    });
+    showNotice(t("providerSaved"));
+  };
+
+  const deleteProvider = (providerId: string) => {
+    setState((current) => ({
+      ...current,
+      providers: current.providers.filter((provider) => provider.id !== providerId),
+      roles: current.roles.map((role) => (role.providerId === providerId ? { ...role, providerId: "", updatedAt: nowIso() } : role))
+    }));
+    showNotice(t("providerDeleted"));
+  };
+
+  const saveRole = (role: AgentRole) => {
+    setState((current) => {
+      const exists = current.roles.some((item) => item.id === role.id);
+      const roles = exists ? current.roles.map((item) => (item.id === role.id ? role : item)) : [...current.roles, role];
+      const rooms = exists
+        ? current.rooms
+        : current.rooms.map((room) =>
+            room.id === current.activeRoomId
+              ? { ...room, roleIds: Array.from(new Set([...room.roleIds, role.id])), updatedAt: nowIso() }
+              : room
+          );
+
+      return {
+        ...current,
+        roles,
+        rooms
+      };
+    });
+    showNotice(t("roleSaved"));
+  };
+
+  const deleteRole = (roleId: string) => {
+    setState((current) => ({
+      ...current,
+      roles: current.roles.filter((role) => role.id !== roleId),
+      rooms: current.rooms.map((room) => ({
+        ...room,
+        roleIds: room.roleIds.filter((item) => item !== roleId),
+        updatedAt: nowIso()
+      }))
+    }));
+    showNotice(t("roleDeleted"));
+  };
+
+  const updateLanguage = (language: AppState["settings"]["language"]) => {
+    setState((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        language
+      }
+    }));
+    showNotice(t("languageSaved"));
+  };
+
+  const createRoom = (input: { name: string; roleIds: string[]; defaultRounds: number }) => {
+    const current = stateRef.current;
+    const timestamp = nowIso();
+    const room: ChatRoom = {
+      id: createId("room"),
+      name: input.name,
+      roleIds: input.roleIds,
+      defaultRounds: input.defaultRounds,
+      messages: [],
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+
+    setState((value) => ({
+      ...value,
+      rooms: [...value.rooms, room],
+      activeRoomId: room.id
+    }));
+    setNewRoomOpen(false);
+    setActiveView("chat");
+    showNotice(t("roomCreated"));
+  };
+
+  const renameRoom = (room: ChatRoom) => {
+    const nextName = window.prompt(t("promptRenameRoom"), room.name)?.trim();
+    if (!nextName) {
+      return;
+    }
+
+    updateRoom({
+      ...room,
+      name: nextName
+    });
+  };
+
+  const duplicateRoom = (room: ChatRoom) => {
+    const copyMessages = window.confirm(t("confirmCopyMessages"));
+    const timestamp = nowIso();
+    const nextRoom: ChatRoom = {
+      ...room,
+      id: createId("room"),
+      name: t("roomCopySuffix", { name: room.name }),
+      messages: copyMessages
+        ? room.messages.map((message) => ({
+            ...message,
+            id: createId("message"),
+            roomId: "",
+            createdAt: message.createdAt
+          }))
+        : [],
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    nextRoom.messages = nextRoom.messages.map((message) => ({ ...message, roomId: nextRoom.id }));
+
+    setState((current) => ({
+      ...current,
+      rooms: [...current.rooms, nextRoom],
+      activeRoomId: nextRoom.id
+    }));
+    setActiveView("chat");
+    showNotice(t("roomDuplicated"));
+  };
+
+  const deleteRoom = (room: ChatRoom) => {
+    const current = stateRef.current;
+    if (current.rooms.length <= 1) {
+      window.alert(t("alertKeepOneRoom"));
+      return;
+    }
+
+    if (!window.confirm(t("confirmDeleteRoom", { name: room.name }))) {
+      return;
+    }
+
+    const nextRooms = current.rooms.filter((item) => item.id !== room.id);
+    setState((value) => ({
+      ...value,
+      rooms: nextRooms,
+      activeRoomId: value.activeRoomId === room.id ? nextRooms[0].id : value.activeRoomId
+    }));
+    showNotice(t("roomDeleted"));
+  };
+
+  const makeUserMessage = (roomId: string, content: string): ChatMessage => ({
+    id: createId("message"),
+    roomId,
+    role: "user",
+    roleName: t("me"),
+    content,
+    createdAt: nowIso(),
+    status: "success"
+  });
+
+  const makeAssistantMessage = (roomId: string, role: AgentRole, content: string, status: ChatMessage["status"]): ChatMessage => ({
+    id: createId("message"),
+    roomId,
+    role: "assistant",
+    roleId: role.id,
+    roleName: role.name,
+    content,
+    createdAt: nowIso(),
+    status
+  });
+
+  const getProviderForRole = (role: AgentRole, providers: ProviderConfig[]) => {
+    return providers.find((provider) => provider.id === role.providerId) || providers[0];
+  };
+
+  const runDiscussion = async (rounds: number, topic?: string) => {
+    const snapshot = stateRef.current;
+    const room = snapshot.rooms.find((item) => item.id === snapshot.activeRoomId);
+
+    if (!room) {
+      return;
+    }
+
+    const discussionRoles = getDiscussionRoles(room, snapshot.roles);
+    if (discussionRoles.length === 0) {
+      window.alert(t("alertNoDiscussionRoles"));
+      return;
+    }
+
+    if (snapshot.providers.length === 0) {
+      window.alert(t("alertNoProviderConfig"));
+      setActiveView("providers");
+      return;
+    }
+
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+    setIsRunning(true);
+    setSpeakingRoleId(undefined);
+
+    let messages = room.messages;
+    if (topic) {
+      messages = [...messages, makeUserMessage(room.id, topic)];
+      commitMessages(room.id, messages);
+    }
+
+    try {
+      for (let roundIndex = 0; roundIndex < rounds; roundIndex += 1) {
+        for (const role of discussionRoles) {
+          if (abortController.signal.aborted) {
+            return;
+          }
+
+          setSpeakingRoleId(role.id);
+          const pendingMessage = makeAssistantMessage(room.id, role, t("thinking"), "pending");
+          messages = [...messages, pendingMessage];
+          commitMessages(room.id, messages);
+
+          const provider = getProviderForRole(role, snapshot.providers);
+
+          try {
+            const response = await callModel({
+              provider,
+              model: role.model || provider.defaultModel,
+              systemPrompt: buildRoleSystemPrompt(role, room, snapshot.roles, snapshot.settings.language),
+              messages: messagesToModelMessages(messages.filter((message) => message.id !== pendingMessage.id)),
+              signal: abortController.signal
+            });
+
+            messages = messages.map((message) =>
+              message.id === pendingMessage.id
+                ? {
+                    ...message,
+                    content: response.content,
+                    status: "success",
+                    error: undefined
+                  }
+                : message
+            );
+            commitMessages(room.id, messages);
+          } catch (error) {
+            const friendlyError = toFriendlyError(error);
+            messages = messages.map((message) =>
+              message.id === pendingMessage.id
+                ? {
+                    ...message,
+                    content: friendlyError,
+                    status: "error",
+                    error: friendlyError
+                  }
+                : message
+            );
+            commitMessages(room.id, messages);
+
+            if (abortController.signal.aborted) {
+              return;
+            }
+          }
+        }
+      }
+    } finally {
+      setIsRunning(false);
+      setSpeakingRoleId(undefined);
+      abortRef.current = null;
+    }
+  };
+
+  const summarizeRoom = async () => {
+    const snapshot = stateRef.current;
+    const room = snapshot.rooms.find((item) => item.id === snapshot.activeRoomId);
+    if (!room || room.messages.length === 0) {
+      return;
+    }
+
+    const role = getSummaryRole(room, snapshot.roles);
+    if (!role) {
+      window.alert(t("alertNoAvailableRole"));
+      return;
+    }
+
+    if (snapshot.providers.length === 0) {
+      window.alert(t("alertNoProviderConfig"));
+      setActiveView("providers");
+      return;
+    }
+
+    const provider = getProviderForRole(role, snapshot.providers);
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+    setIsRunning(true);
+    setSpeakingRoleId(role.id);
+
+    let messages = room.messages;
+    const pendingMessage: ChatMessage = {
+      ...makeAssistantMessage(room.id, role, t("summarizing"), "pending"),
+      role: "summary",
+      roleName: role.name.includes("总结") ? role.name : t("summary")
+    };
+    messages = [...messages, pendingMessage];
+    commitMessages(room.id, messages);
+
+    try {
+      const response = await callModel({
+        provider,
+        model: role.model || provider.defaultModel,
+        systemPrompt: buildSummarySystemPrompt(role, room, snapshot.roles, snapshot.settings.language),
+        messages: [
+          ...messagesToModelMessages(messages.filter((message) => message.id !== pendingMessage.id)),
+          {
+            role: "user",
+            content: "请基于以上完整群聊生成总结，包含：核心结论、主要分歧、风险点、可执行下一步。"
+          }
+        ],
+        signal: abortController.signal
+      });
+
+      messages = messages.map((message) =>
+        message.id === pendingMessage.id
+          ? {
+              ...message,
+              content: response.content,
+              status: "success",
+              error: undefined
+            }
+          : message
+      );
+      commitMessages(room.id, messages);
+    } catch (error) {
+      const friendlyError = toFriendlyError(error);
+      messages = messages.map((message) =>
+        message.id === pendingMessage.id
+          ? {
+              ...message,
+              content: friendlyError,
+              status: "error",
+              error: friendlyError
+            }
+          : message
+      );
+      commitMessages(room.id, messages);
+    } finally {
+      setIsRunning(false);
+      setSpeakingRoleId(undefined);
+      abortRef.current = null;
+    }
+  };
+
+  const stopDiscussion = () => {
+    abortRef.current?.abort();
+    setIsRunning(false);
+    setSpeakingRoleId(undefined);
+    showNotice(t("stopSent"));
+  };
+
+  const clearCurrentRoom = () => {
+    if (!activeRoom || !window.confirm(t("confirmClearRoom"))) {
+      return;
+    }
+
+    commitMessages(activeRoom.id, []);
+    showNotice(t("roomCleared"));
+  };
+
+  const copyMessage = async (message: ChatMessage) => {
+    await copyText(message.content);
+    showNotice(t("messageCopied"));
+  };
+
+  const deleteMessage = (messageId: string) => {
+    if (!activeRoom) {
+      return;
+    }
+
+    commitMessages(
+      activeRoom.id,
+      activeRoom.messages.filter((message) => message.id !== messageId)
+    );
+    showNotice(t("messageDeleted"));
+  };
+
+  const exportJson = () => {
+    if (!activeRoom) {
+      return;
+    }
+
+    downloadText(`${activeRoom.name}.json`, serializeRoomAsJson(activeRoom), "application/json;charset=utf-8");
+  };
+
+  const exportMarkdown = () => {
+    if (!activeRoom) {
+      return;
+    }
+
+    downloadText(`${activeRoom.name}.md`, serializeRoomAsMarkdown(activeRoom, t), "text/markdown;charset=utf-8");
+  };
+
+  const exportText = () => {
+    if (!activeRoom) {
+      return;
+    }
+
+    downloadText(`${activeRoom.name}.txt`, serializeRoomAsText(activeRoom, t), "text/plain;charset=utf-8");
+  };
+
+  const importJson = (content: string) => {
+    if (!activeRoom) {
+      return;
+    }
+
+    try {
+      const importedMessages = parseImportedMessages(content).map((message) => ({
+        ...message,
+        id: createId("message"),
+        roomId: activeRoom.id,
+        status: message.status === "pending" ? "success" : message.status
+      }));
+      commitMessages(activeRoom.id, importedMessages);
+      showNotice(t("historyImported"));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : t("importFailed"));
+    }
+  };
+
+  const resetAll = () => {
+    const nextState = resetAppState();
+    setState(nextState);
+    setActiveView("chat");
+    showNotice(t("dataReset"));
+  };
+
+  if (!activeRoom) {
+    return null;
+  }
+
+  return (
+    <I18nProvider language={state.settings.language}>
+      <div className="min-h-screen overflow-y-auto bg-[#eef1f6] p-2 md:h-screen md:overflow-hidden md:p-4">
+        <div className="flex min-h-screen flex-col rounded-[30px] md:h-full md:min-h-0 md:overflow-hidden md:flex-row">
+          <Sidebar
+            state={state}
+            activeView={activeView}
+            activeRoomId={state.activeRoomId}
+            onViewChange={setActiveView}
+            onRoomSelect={(roomId) => setState((current) => ({ ...current, activeRoomId: roomId }))}
+            onCreateRoom={() => setNewRoomOpen(true)}
+            onRenameRoom={renameRoom}
+            onDuplicateRoom={duplicateRoom}
+            onDeleteRoom={deleteRoom}
+          />
+
+          <section className="relative min-h-[720px] flex-1 p-2 md:min-h-0 md:p-0 md:py-4 md:pr-4">
+            {activeView === "chat" ? (
+              <ChatView
+                room={activeRoom}
+                roles={state.roles}
+                providers={state.providers}
+                isRunning={isRunning}
+                speakingRoleId={speakingRoleId}
+                onUpdateRoom={updateRoom}
+                onStart={(topic, rounds) => void runDiscussion(rounds, topic)}
+                onContinue={(rounds) => void runDiscussion(rounds)}
+                onStop={stopDiscussion}
+                onSummarize={() => void summarizeRoom()}
+                onClear={clearCurrentRoom}
+                onCopyMessage={(message) => void copyMessage(message)}
+                onDeleteMessage={deleteMessage}
+                onExportJson={exportJson}
+                onExportMarkdown={exportMarkdown}
+                onExportText={exportText}
+              />
+            ) : null}
+
+            {activeView === "roles" ? (
+              <RolesView roles={state.roles} providers={state.providers} onSave={saveRole} onDelete={deleteRole} />
+            ) : null}
+
+            {activeView === "providers" ? (
+              <ProvidersView providers={state.providers} onSave={saveProvider} onDelete={deleteProvider} />
+            ) : null}
+
+            {activeView === "history" ? (
+              <HistoryView
+                room={activeRoom}
+                onExportJson={exportJson}
+                onExportMarkdown={exportMarkdown}
+                onExportText={exportText}
+                onImportJson={importJson}
+              />
+            ) : null}
+
+            {activeView === "settings" ? (
+              <SettingsView language={state.settings.language} onLanguageChange={updateLanguage} onReset={resetAll} />
+            ) : null}
+
+            <NewRoomDialog
+              open={newRoomOpen}
+              roles={state.roles}
+              defaultName={t("newRoundtableName", { count: state.rooms.length + 1 })}
+              onClose={() => setNewRoomOpen(false)}
+              onCreate={createRoom}
+            />
+
+            {notice ? (
+              <div className="absolute right-6 top-6 z-40 rounded-2xl border border-white bg-white/95 px-4 py-3 text-sm text-slate-800 shadow-soft">
+                {notice}
+              </div>
+            ) : null}
+          </section>
+        </div>
+      </div>
+    </I18nProvider>
+  );
+}
