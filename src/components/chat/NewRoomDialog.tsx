@@ -1,28 +1,45 @@
 "use client";
 
+import { GripVertical } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
 import { Button } from "@/components/ui/Button";
 import { Field, TextInput } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
+import { FILE_MASTER_ROLE_ID } from "@/lib/defaults";
 import { useI18n } from "@/lib/i18n-context";
-import type { AgentRole } from "@/lib/types";
+import type { AgentRole, RoomMode } from "@/lib/types";
 import { clampRounds, cn } from "@/lib/utils";
 
 interface NewRoomDialogProps {
   open: boolean;
+  mode: RoomMode;
   roles: AgentRole[];
   defaultName: string;
   onClose: () => void;
-  onCreate: (input: { name: string; roleIds: string[]; defaultRounds: number }) => void;
+  onCreate: (input: { name: string; mode: RoomMode; roleIds: string[]; defaultRounds: number }) => void;
 }
 
-export function NewRoomDialog({ open, roles, defaultName, onClose, onCreate }: NewRoomDialogProps) {
+export function NewRoomDialog({ open, mode, roles, defaultName, onClose, onCreate }: NewRoomDialogProps) {
   const { t } = useI18n();
   const enabledRoleIds = useMemo(() => roles.filter((role) => role.enabled).map((role) => role.id), [roles]);
+  const defaultGroupRoleIds = useMemo(
+    () => roles.filter((role) => role.enabled && role.id !== FILE_MASTER_ROLE_ID).map((role) => role.id),
+    [roles]
+  );
+  const isPrivate = mode === "private";
   const [name, setName] = useState(defaultName);
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>(enabledRoleIds);
+  const [draggingRoleId, setDraggingRoleId] = useState<string | undefined>();
   const [rounds, setRounds] = useState(2);
+  const orderedRoles = useMemo(() => {
+    const selectedRoles = selectedRoleIds
+      .map((roleId) => roles.find((role) => role.id === roleId))
+      .filter((role): role is AgentRole => Boolean(role));
+    const unselectedRoles = roles.filter((role) => !selectedRoleIds.includes(role.id));
+
+    return [...selectedRoles, ...unselectedRoles];
+  }, [roles, selectedRoleIds]);
 
   useEffect(() => {
     if (!open) {
@@ -30,14 +47,37 @@ export function NewRoomDialog({ open, roles, defaultName, onClose, onCreate }: N
     }
 
     setName(defaultName);
-    setSelectedRoleIds(enabledRoleIds);
-    setRounds(2);
-  }, [defaultName, enabledRoleIds, open]);
+    setSelectedRoleIds(isPrivate ? enabledRoleIds.slice(0, 1) : defaultGroupRoleIds);
+    setRounds(isPrivate ? 1 : 2);
+    setDraggingRoleId(undefined);
+  }, [defaultGroupRoleIds, defaultName, enabledRoleIds, isPrivate, open]);
 
   const toggleRole = (roleId: string) => {
+    if (isPrivate) {
+      setSelectedRoleIds((current) => (current.includes(roleId) ? [] : [roleId]));
+      return;
+    }
+
     setSelectedRoleIds((current) =>
       current.includes(roleId) ? current.filter((item) => item !== roleId) : [...current, roleId]
     );
+  };
+
+  const moveRoleBefore = (sourceRoleId: string, targetRoleId: string) => {
+    if (sourceRoleId === targetRoleId) {
+      return;
+    }
+
+    setSelectedRoleIds((current) => {
+      if (!current.includes(sourceRoleId) || !current.includes(targetRoleId)) {
+        return current;
+      }
+
+      const next = current.filter((roleId) => roleId !== sourceRoleId);
+      const targetIndex = next.indexOf(targetRoleId);
+      next.splice(targetIndex, 0, sourceRoleId);
+      return next;
+    });
   };
 
   const handleCreate = () => {
@@ -48,19 +88,34 @@ export function NewRoomDialog({ open, roles, defaultName, onClose, onCreate }: N
       return;
     }
 
+    if (isPrivate && finalRoleIds.length !== 1) {
+      window.alert(t("alertNeedPrivateParticipant"));
+      return;
+    }
+
     onCreate({
       name: name.trim() || defaultName,
+      mode,
       roleIds: finalRoleIds,
       defaultRounds: clampRounds(rounds)
     });
   };
 
   return (
-    <Modal title={t("newRoomTitle")} description={t("newRoomDesc")} open={open} onClose={onClose}>
+    <Modal
+      title={isPrivate ? t("newPrivateRoomTitle") : t("newRoomTitle")}
+      description={isPrivate ? t("newPrivateRoomDesc") : t("newRoomDesc")}
+      open={open}
+      onClose={onClose}
+    >
       <div className="space-y-5">
         <div className="grid gap-4 md:grid-cols-[1fr_140px]">
           <Field label={t("roomName")}>
-            <TextInput value={name} placeholder={t("roomNamePlaceholder")} onChange={(event) => setName(event.target.value)} />
+            <TextInput
+              value={name}
+              placeholder={isPrivate ? t("privateRoomNamePlaceholder") : t("roomNamePlaceholder")}
+              onChange={(event) => setName(event.target.value)}
+            />
           </Field>
           <Field label={t("defaultRounds")}>
             <select
@@ -80,17 +135,19 @@ export function NewRoomDialog({ open, roles, defaultName, onClose, onCreate }: N
         <div>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-gray-950">{t("participants")}</h3>
-              <p className="mt-1 text-xs text-gray-500">{t("participantsDesc")}</p>
+              <h3 className="text-sm font-semibold text-gray-950">{isPrivate ? t("participants") : t("participantsAndOrder")}</h3>
+              <p className="mt-1 text-xs text-gray-500">{isPrivate ? t("privateParticipantsDesc") : t("participantsOrderDesc")}</p>
             </div>
-            <div className="flex gap-2">
-              <Button type="button" size="sm" onClick={() => setSelectedRoleIds(roles.map((role) => role.id))}>
-                {t("selectAll")}
-              </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedRoleIds([])}>
-                {t("clear")}
-              </Button>
-            </div>
+            {!isPrivate ? (
+              <div className="flex gap-2">
+                <Button type="button" size="sm" onClick={() => setSelectedRoleIds(roles.map((role) => role.id))}>
+                  {t("selectAll")}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedRoleIds([])}>
+                  {t("clear")}
+                </Button>
+              </div>
+            ) : null}
           </div>
 
           {roles.length === 0 ? (
@@ -99,20 +156,59 @@ export function NewRoomDialog({ open, roles, defaultName, onClose, onCreate }: N
             </div>
           ) : (
             <div className="grid max-h-80 gap-3 overflow-y-auto pr-1 scrollbar-thin md:grid-cols-2">
-              {roles.map((role) => {
+              {orderedRoles.map((role) => {
                 const checked = selectedRoleIds.includes(role.id);
+                const orderIndex = selectedRoleIds.indexOf(role.id);
 
                 return (
                   <button
                     key={role.id}
                     type="button"
+                    onDragOver={(event) => {
+                      if (draggingRoleId && checked) {
+                        event.preventDefault();
+                      }
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      if (draggingRoleId && checked) {
+                        moveRoleBefore(draggingRoleId, role.id);
+                      }
+                      setDraggingRoleId(undefined);
+                    }}
                     className={cn(
                       "flex items-start gap-3 rounded-md border p-3 text-left transition",
                       checked ? "border-teal-300 bg-teal-50" : "border-gray-200 bg-white hover:bg-gray-50"
                     )}
                     onClick={() => toggleRole(role.id)}
                   >
-                    <RoleAvatar role={role} size="sm" />
+                    {checked && !isPrivate ? (
+                      <span
+                        className="mt-1 flex h-7 w-5 cursor-grab items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-slate-700 active:cursor-grabbing"
+                        draggable
+                        title={t("dragToReorder")}
+                        onClick={(event) => event.stopPropagation()}
+                        onDragStart={(event) => {
+                          event.stopPropagation();
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", role.id);
+                          setDraggingRoleId(role.id);
+                        }}
+                        onDragEnd={() => setDraggingRoleId(undefined)}
+                      >
+                        <GripVertical className="h-4 w-4" />
+                      </span>
+                    ) : (
+                      <span className="mt-1 h-7 w-5" />
+                    )}
+                    <div className="relative">
+                      <RoleAvatar role={role} size="sm" />
+                      {checked && !isPrivate ? (
+                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-teal-600 px-1 text-[10px] font-semibold text-white">
+                          {orderIndex + 1}
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <span className="truncate text-sm font-semibold text-gray-950">{role.name}</span>

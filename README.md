@@ -2,9 +2,11 @@
 
 [中文说明](./README.zh-CN.md)
 
-AI Roundtable is a local-first multi-agent discussion app. It lets you create AI roles, place them into group chat rooms, assign tasks with `@mentions`, and turn discussions into summaries, articles, reports, or downloadable files.
+AI Roundtable turns a simple chat box into your own local AI team workspace. Create specialized roles, place them into group rooms or private chats, and use `@mentions` to route work from brainstorming to writing, review, summary, and final file delivery.
 
-Instead of chatting with one assistant, AI Roundtable works more like a small AI team. You can create a host, product manager, technical expert, creative advisor, writer, reviewer, editor, summarizer, or file master, then let them discuss and collaborate in order.
+Instead of asking one assistant to do everything, you can assemble a team with a host, product manager, technical expert, creative advisor, writer, reviewer, editor, summarizer, and File Master. Each role keeps its own identity and speaking style, then collaborates in order to turn rough ideas into practical outputs.
+
+It is built for people who want AI collaboration without accounts, databases, or a heavy backend. Your roles, rooms, chat history, and API keys stay on your device, while the interface stays simple enough for non-technical users.
 
 ## What Can It Do?
 

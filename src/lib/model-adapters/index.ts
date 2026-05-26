@@ -2,7 +2,7 @@ import type { ModelInput, ModelResponse } from "@/lib/types";
 import { createId } from "@/lib/utils";
 import { callAnthropic } from "./anthropic";
 import { cleanModelOutput } from "./clean-output";
-import { ModelAdapterError } from "./errors";
+import { ModelAdapterError, toFriendlyError } from "./errors";
 import { callOpenAICompatible } from "./openai-compatible";
 
 export async function callModel(input: ModelInput): Promise<ModelResponse> {
@@ -31,11 +31,40 @@ export async function callModel(input: ModelInput): Promise<ModelResponse> {
       });
       return cleanResponse(response);
     } catch (error) {
-      const maybeError = error as Error & { friendlyMessage?: string };
-      throw new ModelAdapterError(maybeError.friendlyMessage || maybeError.message || "请求失败，请稍后再试。");
+      const maybeError = error as Error & { friendlyMessage?: string; status?: number };
+      throw new ModelAdapterError(maybeError.friendlyMessage || toFriendlyError(maybeError) || "请求失败，请稍后再试。", {
+        status: maybeError.status,
+        detail: maybeError.message
+      });
     } finally {
       input.signal?.removeEventListener("abort", onAbort);
     }
+  }
+
+  if (typeof window !== "undefined") {
+    const { signal: _signal, ...serializableInput } = input;
+    const response = await fetch("/api/model", {
+      method: "POST",
+      signal: input.signal,
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(serializableInput)
+    });
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new ModelAdapterError(payload?.friendlyMessage || payload?.message || "模型连接失败，请检查配置后重试。", {
+        status: typeof payload?.status === "number" ? payload.status : response.status,
+        detail: payload?.message
+      });
+    }
+
+    if (!payload?.content) {
+      throw new ModelAdapterError("返回格式不符合预期，没有找到模型回复内容。");
+    }
+
+    return cleanResponse(payload as ModelResponse);
   }
 
   if (input.provider.protocol === "anthropic") {
@@ -45,4 +74,4 @@ export async function callModel(input: ModelInput): Promise<ModelResponse> {
   return cleanResponse(await callOpenAICompatible(input));
 }
 
-export { toFriendlyError } from "./errors";
+export { buildConnectionTestReport, toFriendlyError } from "./errors";

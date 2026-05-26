@@ -4,8 +4,7 @@ import {
   ArrowUp,
   Bot,
   CheckCircle2,
-  FileJson,
-  FileText,
+  FileUp,
   Layers3,
   MessageCircle,
   Paperclip,
@@ -14,14 +13,22 @@ import {
   Sparkles,
   Square,
   Trash2,
-  Users
+  Users,
+  X
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
 import { Button } from "@/components/ui/Button";
+import {
+  ACCEPTED_CHAT_ATTACHMENT_TYPES,
+  createChatAttachment,
+  formatFileSize,
+  isSupportedChatAttachment,
+  MAX_ATTACHMENT_BYTES
+} from "@/lib/attachments";
 import { useI18n } from "@/lib/i18n-context";
-import type { AgentRole, ChatMessage, ChatRoom, ProviderConfig } from "@/lib/types";
+import type { AgentRole, ChatAttachment, ChatMessage, ChatRoom, ProviderConfig } from "@/lib/types";
 import { clampRounds, cn } from "@/lib/utils";
 
 interface ChatViewProps {
@@ -31,16 +38,13 @@ interface ChatViewProps {
   isRunning: boolean;
   speakingRoleId?: string;
   onUpdateRoom: (room: ChatRoom) => void;
-  onStart: (topic: string, rounds: number) => void;
+  onStart: (topic: string, rounds: number, attachments?: ChatAttachment[]) => void;
   onContinue: (rounds: number) => void;
   onStop: () => void;
   onSummarize: () => void;
   onClear: () => void;
   onCopyMessage: (message: ChatMessage) => void;
   onDeleteMessage: (messageId: string) => void;
-  onExportJson: () => void;
-  onExportMarkdown: () => void;
-  onExportText: () => void;
 }
 
 function ContextCard({ title, children }: { title: string; children: ReactNode }) {
@@ -65,20 +69,34 @@ export function ChatView({
   onSummarize,
   onClear,
   onCopyMessage,
-  onDeleteMessage,
-  onExportJson,
-  onExportMarkdown,
-  onExportText
+  onDeleteMessage
 }: ChatViewProps) {
   const { t } = useI18n();
   const [topic, setTopic] = useState("");
+  const [mentionQuery, setMentionQuery] = useState<string | undefined>();
+  const [mentionStart, setMentionStart] = useState<number | undefined>();
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const selectedRoles = room.roleIds
     .map((roleId) => roles.find((role) => role.id === roleId))
     .filter((role): role is AgentRole => Boolean(role));
+  const roleChips = useMemo(
+    () => [...selectedRoles, ...roles.filter((role) => !room.roleIds.includes(role.id))],
+    [roles, room.roleIds, selectedRoles]
+  );
   const enabledSelectedRoles = selectedRoles.filter((role) => role.enabled);
   const speakingRole = roles.find((role) => role.id === speakingRoleId);
   const visibleProviders = useMemo(() => providers.slice(0, 4), [providers]);
+  const mentionCandidates = useMemo(() => {
+    if (mentionQuery === undefined) {
+      return [];
+    }
+
+    const query = mentionQuery.trim().toLowerCase();
+    return enabledSelectedRoles.filter((role) => !query || role.name.toLowerCase().includes(query));
+  }, [enabledSelectedRoles, mentionQuery]);
 
   useEffect(() => {
     if (room.messages.length > 0) {
@@ -94,9 +112,14 @@ export function ChatView({
   };
 
   const toggleRole = (roleId: string) => {
-    const nextIds = room.roleIds.includes(roleId)
-      ? room.roleIds.filter((item) => item !== roleId)
-      : [...room.roleIds, roleId];
+    const nextIds =
+      room.mode === "private"
+        ? room.roleIds.includes(roleId)
+          ? []
+          : [roleId]
+        : room.roleIds.includes(roleId)
+          ? room.roleIds.filter((item) => item !== roleId)
+          : [...room.roleIds, roleId];
 
     onUpdateRoom({
       ...room,
@@ -104,15 +127,89 @@ export function ChatView({
     });
   };
 
-  const startDiscussion = () => {
-    const trimmed = topic.trim();
-    if (!trimmed) {
-      window.alert(t("alertNeedTopic"));
+  const updateMentionState = (value: string, caretPosition: number) => {
+    const beforeCaret = value.slice(0, caretPosition);
+    const atIndex = beforeCaret.lastIndexOf("@");
+
+    if (atIndex < 0) {
+      setMentionQuery(undefined);
+      setMentionStart(undefined);
       return;
     }
 
-    onStart(trimmed, room.defaultRounds);
+    const rawQuery = beforeCaret.slice(atIndex + 1);
+    const query = rawQuery.replace(/^\s+/, "");
+    if (/[\n，,。；;：:]/.test(rawQuery) || /\s/.test(query)) {
+      setMentionQuery(undefined);
+      setMentionStart(undefined);
+      return;
+    }
+
+    setMentionQuery(query);
+    setMentionStart(atIndex);
+  };
+
+  const insertMention = (role: AgentRole) => {
+    const textarea = textareaRef.current;
+    const caretPosition = textarea?.selectionStart ?? topic.length;
+    const start = mentionStart ?? caretPosition;
+    const nextTopic = `${topic.slice(0, start)}@${role.name} ${topic.slice(caretPosition)}`;
+    const nextCaret = start + role.name.length + 2;
+
+    setTopic(nextTopic);
+    setMentionQuery(undefined);
+    setMentionStart(undefined);
+    window.setTimeout(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCaret, nextCaret);
+    }, 0);
+  };
+
+  const startDiscussion = () => {
+    const trimmed = topic.trim();
+    if (!trimmed && pendingAttachments.length === 0) {
+      window.alert(t("alertNeedTopicOrAttachment"));
+      return;
+    }
+
+    onStart(trimmed, room.defaultRounds, pendingAttachments);
     setTopic("");
+    setPendingAttachments([]);
+  };
+
+  const removeAttachment = (attachmentId: string) => {
+    setPendingAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId));
+  };
+
+  const handleFiles = async (fileList?: FileList | null) => {
+    if (!fileList || fileList.length === 0) {
+      return;
+    }
+
+    const files = Array.from(fileList);
+
+    for (const file of files) {
+      if (!isSupportedChatAttachment(file)) {
+        window.alert(t("unsupportedAttachment", { name: file.name }));
+        continue;
+      }
+
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        window.alert(t("attachmentTooLarge", { name: file.name, size: formatFileSize(MAX_ATTACHMENT_BYTES) }));
+        continue;
+      }
+
+      try {
+        const attachment = await createChatAttachment(file);
+        setPendingAttachments((current) => [...current, attachment]);
+      } catch {
+        window.alert(t("attachmentReadFailed", { name: file.name }));
+      }
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   return (
@@ -130,6 +227,9 @@ export function ChatView({
               <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
                 <span className="rounded-full bg-slate-100 px-2.5 py-1">
                   {enabledSelectedRoles.length > 0 ? t("enabledRoleCount", { count: enabledSelectedRoles.length }) : t("noSpeakingRoles")}
+                </span>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1">
+                  {t(room.mode === "private" ? "privateChatBadge" : "groupChatBadge")}
                 </span>
                 <span className="rounded-full bg-slate-100 px-2.5 py-1">{t("roundUnit", { count: room.defaultRounds })}</span>
                 <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">{t("localSave")}</span>
@@ -159,8 +259,9 @@ export function ChatView({
             {roles.length === 0 ? (
               <span className="text-sm text-slate-500">{t("noRolesCreateFirst")}</span>
             ) : (
-              roles.map((role) => {
+              roleChips.map((role) => {
                 const checked = room.roleIds.includes(role.id);
+                const orderIndex = room.roleIds.indexOf(role.id);
                 return (
                   <button
                     key={role.id}
@@ -174,6 +275,11 @@ export function ChatView({
                     title={role.enabled ? role.name : `${role.name} ${t("disabled")}`}
                   >
                     <RoleAvatar role={role} size="xs" />
+                    {checked && room.mode !== "private" ? (
+                      <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-700">
+                        {orderIndex + 1}
+                      </span>
+                    ) : null}
                     {role.name}
                   </button>
                 );
@@ -217,9 +323,15 @@ export function ChatView({
         <footer className="border-t border-slate-100 bg-white px-5 py-5 md:px-7">
           <div className="rounded-[22px] border border-slate-200 bg-white p-3 shadow-[0_16px_44px_rgba(15,23,42,0.07)]">
             <textarea
+              ref={textareaRef}
               className="min-h-20 w-full resize-none rounded-2xl border-0 bg-transparent px-2 py-2 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:bg-slate-50"
               value={topic}
-              onChange={(event) => setTopic(event.target.value)}
+              onChange={(event) => {
+                setTopic(event.target.value);
+                updateMentionState(event.target.value, event.target.selectionStart);
+              }}
+              onClick={(event) => updateMentionState(topic, event.currentTarget.selectionStart)}
+              onKeyUp={(event) => updateMentionState(topic, event.currentTarget.selectionStart)}
               placeholder={t("topicPlaceholder")}
               disabled={isRunning}
               onKeyDown={(event) => {
@@ -229,19 +341,70 @@ export function ChatView({
                 }
               }}
             />
+            {mentionQuery !== undefined ? (
+              <div className="mb-2 max-h-44 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50 p-2 scrollbar-thin">
+                {mentionCandidates.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-slate-400">{t("mentionNoRoles")}</div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {mentionCandidates.map((role) => (
+                      <button
+                        key={role.id}
+                        type="button"
+                        className="flex items-center gap-2 rounded-full border border-white bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm transition hover:border-indigo-100 hover:bg-indigo-50 hover:text-indigo-900"
+                        onClick={() => insertMention(role)}
+                      >
+                        <RoleAvatar role={role} size="xs" />
+                        <span>@{role.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
+            {pendingAttachments.length > 0 ? (
+              <div className="mb-2 grid gap-2 px-1 sm:grid-cols-2">
+                {pendingAttachments.map((attachment) => (
+                  <div key={attachment.id} className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                    {attachment.kind === "image" && attachment.dataUrl ? (
+                      <img src={attachment.dataUrl} alt={attachment.name} className="h-10 w-10 rounded-xl object-cover" />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-indigo-500">
+                        <FileUp className="h-5 w-5" />
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-semibold text-slate-800">{attachment.name}</div>
+                      <div className="mt-0.5 text-[11px] text-slate-400">
+                        {formatFileSize(attachment.size)}
+                        {attachment.extractedText ? ` · ${t("contentReadable")}` : ""}
+                      </div>
+                    </div>
+                    <Button className="h-7 w-7 rounded-lg" size="icon" variant="ghost" title={t("removeAttachment")} onClick={() => removeAttachment(attachment.id)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept={ACCEPTED_CHAT_ATTACHMENT_TYPES}
+                  className="hidden"
+                  onChange={(event) => void handleFiles(event.target.files)}
+                />
                 <Button
-                  className="h-9 rounded-xl px-3"
-                  variant="ghost"
-                  title={t("copyCurrentChat")}
-                  disabled={room.messages.length === 0}
-                  onClick={() => {
-                    const text = room.messages.map((message) => `${message.roleName}：${message.content}`).join("\n\n");
-                    void navigator.clipboard?.writeText(text);
-                  }}
+                  variant="secondary"
+                  title={t("uploadAttachment")}
+                  disabled={isRunning}
+                  onClick={() => fileInputRef.current?.click()}
                 >
                   <Paperclip className="h-4 w-4" />
+                  {t("uploadAttachment")}
                 </Button>
                 <Button variant="secondary" onClick={() => onContinue(1)} disabled={isRunning || room.messages.length === 0}>
                   <RotateCcw className="h-4 w-4" />
@@ -327,35 +490,6 @@ export function ChatView({
                 })}
               </div>
             )}
-          </ContextCard>
-
-          <ContextCard title={t("exportFormats")}>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                className="rounded-2xl border border-slate-200 bg-white px-2 py-3 text-xs font-medium text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 disabled:opacity-50"
-                onClick={onExportMarkdown}
-                disabled={room.messages.length === 0}
-              >
-                <FileText className="mx-auto mb-1 h-4 w-4" />
-                {t("formatMarkdown")}
-              </button>
-              <button
-                className="rounded-2xl border border-slate-200 bg-white px-2 py-3 text-xs font-medium text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 disabled:opacity-50"
-                onClick={onExportJson}
-                disabled={room.messages.length === 0}
-              >
-                <FileJson className="mx-auto mb-1 h-4 w-4" />
-                {t("formatJson")}
-              </button>
-              <button
-                className="rounded-2xl border border-slate-200 bg-white px-2 py-3 text-xs font-medium text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 disabled:opacity-50"
-                onClick={onExportText}
-                disabled={room.messages.length === 0}
-              >
-                <FileText className="mx-auto mb-1 h-4 w-4" />
-                {t("formatTxt")}
-              </button>
-            </div>
           </ContextCard>
 
           <ContextCard title={t("defaultRounds")}>

@@ -24,7 +24,8 @@ interface SidebarProps {
   activeRoomId: string;
   onViewChange: (view: AppView) => void;
   onRoomSelect: (roomId: string) => void;
-  onCreateRoom: () => void;
+  onCreateGroupRoom: () => void;
+  onCreatePrivateRoom: () => void;
   onRenameRoom: (room: ChatRoom) => void;
   onDuplicateRoom: (room: ChatRoom) => void;
   onDeleteRoom: (room: ChatRoom) => void;
@@ -42,7 +43,8 @@ export function Sidebar({
   activeRoomId,
   onViewChange,
   onRoomSelect,
-  onCreateRoom,
+  onCreateGroupRoom,
+  onCreatePrivateRoom,
   onRenameRoom,
   onDuplicateRoom,
   onDeleteRoom
@@ -51,12 +53,6 @@ export function Sidebar({
 
   return (
     <aside className="flex h-auto max-h-[46vh] w-full shrink-0 flex-col bg-transparent px-3 pb-3 pt-3 md:h-full md:max-h-none md:w-[268px] md:px-4 md:pb-4 md:pt-4">
-      <div className="mb-4 flex h-3 items-center gap-2 px-1 md:mb-5">
-        <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
-        <span className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
-        <span className="h-3 w-3 rounded-full bg-[#28c840]" />
-      </div>
-
       <div className="px-1">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#282b38] text-[#c7fbff] shadow-[0_14px_28px_rgba(15,23,42,0.16)]">
@@ -67,10 +63,16 @@ export function Sidebar({
             <p className="text-xs text-slate-500">{t("appSubtitle")}</p>
           </div>
         </div>
-        <Button className="mt-5 w-full justify-start rounded-2xl bg-white" variant="secondary" onClick={onCreateRoom}>
-          <MessageSquarePlus className="h-4 w-4" />
-          {t("newChat")}
-        </Button>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <Button className="justify-center rounded-2xl bg-white px-2" variant="secondary" onClick={onCreateGroupRoom}>
+            <MessageSquarePlus className="h-4 w-4" />
+            <span className="whitespace-nowrap">{t("newGroupChat")}</span>
+          </Button>
+          <Button className="justify-center rounded-2xl bg-white px-2" variant="secondary" onClick={onCreatePrivateRoom}>
+            <MessageCircle className="h-4 w-4" />
+            <span className="whitespace-nowrap">{t("newPrivateChat")}</span>
+          </Button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto py-5 scrollbar-thin">
@@ -99,7 +101,12 @@ export function Sidebar({
                     <span className="truncate text-sm font-semibold text-slate-900">{room.name}</span>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{room.messages.length}</span>
                   </div>
-                  <div className="mt-1 text-xs text-slate-400">{formatDateTime(room.updatedAt)}</div>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+                    <span>{formatDateTime(room.updatedAt)}</span>
+                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+                      {t(room.mode === "private" ? "privateChatBadge" : "groupChatBadge")}
+                    </span>
+                  </div>
                 </button>
                 <div className="mt-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
                   <Button className="h-7 w-7 rounded-lg" size="icon" variant="ghost" onClick={() => onRenameRoom(room)} title={t("rename")}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Edit3, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Edit3, KeyRound, Loader2, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ProviderForm } from "@/components/providers/ProviderForm";
 import { Button } from "@/components/ui/Button";
@@ -13,9 +13,11 @@ interface ProvidersViewProps {
   providers: ProviderConfig[];
   onSave: (provider: ProviderConfig) => void;
   onDelete: (providerId: string) => void;
+  onTest: (provider: ProviderConfig) => void;
+  testingProviderId?: string;
 }
 
-export function ProvidersView({ providers, onSave, onDelete }: ProvidersViewProps) {
+export function ProvidersView({ providers, onSave, onDelete, onTest, testingProviderId }: ProvidersViewProps) {
   const { t } = useI18n();
   const [editing, setEditing] = useState<ProviderConfig | undefined>();
   const [open, setOpen] = useState(false);
@@ -65,6 +67,8 @@ export function ProvidersView({ providers, onSave, onDelete }: ProvidersViewProp
                     <span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
                       {provider.protocol === "anthropic" ? t("protocolAnthropic") : t("protocolOpenAI")}
                     </span>
+                    {provider.lastTestStatus === "success" ? <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">测试成功</span> : null}
+                    {provider.lastTestStatus === "failed" ? <span className="rounded-full bg-rose-50 px-2 py-1 text-xs text-rose-700">测试失败</span> : null}
                   </div>
                   <p className="mt-2 break-all text-sm text-gray-600">{provider.baseUrl || t("baseUrlMissing")}</p>
                   <p className="mt-1 text-sm text-gray-500">{t("defaultModelLabel", { model: provider.defaultModel || t("notFilled") })}</p>
@@ -72,6 +76,10 @@ export function ProvidersView({ providers, onSave, onDelete }: ProvidersViewProp
                   <p className="mt-3 text-xs text-gray-400">{t("updatedAt", { time: formatDateTime(provider.updatedAt) })}</p>
                 </div>
                 <div className="flex gap-2">
+                  <Button size="sm" title="测试连接" disabled={testingProviderId === provider.id} onClick={() => onTest(provider)}>
+                    {testingProviderId === provider.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                    测试连接
+                  </Button>
                   <Button
                     size="icon"
                     title={t("edit")}

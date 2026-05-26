@@ -15,10 +15,11 @@ import {
   buildRoleSystemPrompt,
   buildSummarySystemPrompt,
   getDiscussionRoles,
+  getMentionedDiscussionPlan,
   getSummaryRole,
   messagesToModelMessages
 } from "@/lib/chat";
-import { callModel, toFriendlyError } from "@/lib/model-adapters";
+import { buildConnectionTestReport, callModel, toFriendlyError } from "@/lib/model-adapters";
 import { createDefaultAppState } from "@/lib/defaults";
 import {
   loadAppState,
@@ -29,7 +30,7 @@ import {
   serializeRoomAsMarkdown,
   serializeRoomAsText
 } from "@/lib/storage/app-storage";
-import type { AgentRole, AppState, ChatMessage, ChatRoom, ProviderConfig } from "@/lib/types";
+import type { AgentRole, AppState, ChatAttachment, ChatMessage, ChatRoom, ProviderConfig, RoomMode } from "@/lib/types";
 import { copyText, createId, downloadText, nowIso } from "@/lib/utils";
 
 export function RoundtableApp() {
@@ -38,8 +39,10 @@ export function RoundtableApp() {
   const [activeView, setActiveView] = useState<AppView>("chat");
   const [isRunning, setIsRunning] = useState(false);
   const [speakingRoleId, setSpeakingRoleId] = useState<string | undefined>();
+  const [testingProviderId, setTestingProviderId] = useState<string | undefined>();
   const [notice, setNotice] = useState("");
   const [newRoomOpen, setNewRoomOpen] = useState(false);
+  const [newRoomMode, setNewRoomMode] = useState<RoomMode>("group");
   const stateRef = useRef(state);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -80,6 +83,22 @@ export function RoundtableApp() {
 
   const activeRoom = state.rooms.find((room) => room.id === state.activeRoomId) || state.rooms[0];
   const t = createTranslator(state.settings.language);
+  const waitBetweenModelCalls = (signal: AbortSignal) =>
+    new Promise<void>((resolve, reject) => {
+      if (signal.aborted) {
+        reject(new DOMException("讨论已停止。", "AbortError"));
+        return;
+      }
+
+      const timer = window.setTimeout(resolve, 2500);
+      const onAbort = () => {
+        window.clearTimeout(timer);
+        reject(new DOMException("讨论已停止。", "AbortError"));
+      };
+
+      signal.addEventListener("abort", onAbort, { once: true });
+      window.setTimeout(() => signal.removeEventListener("abort", onAbort), 2600);
+    });
 
   const updateRooms = (updater: (rooms: ChatRoom[]) => ChatRoom[], activeRoomId = stateRef.current.activeRoomId) => {
     setState((current) => ({
@@ -117,6 +136,11 @@ export function RoundtableApp() {
   };
 
   const showNotice = (message: string) => setNotice(message);
+
+  const openNewRoomDialog = (mode: RoomMode) => {
+    setNewRoomMode(mode);
+    setNewRoomOpen(true);
+  };
 
   const saveProvider = (provider: ProviderConfig) => {
     setState((current) => {
@@ -185,12 +209,12 @@ export function RoundtableApp() {
     showNotice(t("languageSaved"));
   };
 
-  const createRoom = (input: { name: string; roleIds: string[]; defaultRounds: number }) => {
-    const current = stateRef.current;
+  const createRoom = (input: { name: string; mode: RoomMode; roleIds: string[]; defaultRounds: number }) => {
     const timestamp = nowIso();
     const room: ChatRoom = {
       id: createId("room"),
       name: input.name,
+      mode: input.mode,
       roleIds: input.roleIds,
       defaultRounds: input.defaultRounds,
       messages: [],
@@ -269,12 +293,13 @@ export function RoundtableApp() {
     showNotice(t("roomDeleted"));
   };
 
-  const makeUserMessage = (roomId: string, content: string): ChatMessage => ({
+  const makeUserMessage = (roomId: string, content: string, attachments: ChatAttachment[] = []): ChatMessage => ({
     id: createId("message"),
     roomId,
     role: "user",
     roleName: t("me"),
     content,
+    attachments,
     createdAt: nowIso(),
     status: "success"
   });
@@ -294,7 +319,34 @@ export function RoundtableApp() {
     return providers.find((provider) => provider.id === role.providerId) || providers[0];
   };
 
-  const runDiscussion = async (rounds: number, topic?: string) => {
+  const testProvider = async (provider: ProviderConfig) => {
+    setTestingProviderId(provider.id);
+
+    try {
+      await callModel({
+        provider,
+        model: provider.defaultModel,
+        systemPrompt: "你是连接测试助手。只回复 OK。",
+        messages: [{ role: "user", content: "请回复 OK" }]
+      });
+
+      setState((current) => ({
+        ...current,
+        providers: current.providers.map((item) => (item.id === provider.id ? { ...item, lastTestStatus: "success" } : item))
+      }));
+      showNotice("连接测试成功");
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        providers: current.providers.map((item) => (item.id === provider.id ? { ...item, lastTestStatus: "failed" } : item))
+      }));
+      window.alert(buildConnectionTestReport(error, provider));
+    } finally {
+      setTestingProviderId(undefined);
+    }
+  };
+
+  const runDiscussion = async (rounds: number, topic?: string, attachments: ChatAttachment[] = []) => {
     const snapshot = stateRef.current;
     const room = snapshot.rooms.find((item) => item.id === snapshot.activeRoomId);
 
@@ -302,7 +354,9 @@ export function RoundtableApp() {
       return;
     }
 
-    const discussionRoles = getDiscussionRoles(room, snapshot.roles);
+    const discussionPlan = getMentionedDiscussionPlan(topic || "", room, snapshot.roles, rounds);
+    const mentionedRoles = discussionPlan.mentionedRoles;
+    const discussionRoles = discussionPlan.stages.flatMap((stage) => stage.roles);
     if (discussionRoles.length === 0) {
       window.alert(t("alertNoDiscussionRoles"));
       return;
@@ -320,62 +374,81 @@ export function RoundtableApp() {
     setSpeakingRoleId(undefined);
 
     let messages = room.messages;
-    if (topic) {
-      messages = [...messages, makeUserMessage(room.id, topic)];
+    if (topic || attachments.length > 0) {
+      messages = [...messages, makeUserMessage(room.id, topic || t("defaultAttachmentTopic"), attachments)];
       commitMessages(room.id, messages);
+      if (mentionedRoles.length > 0) {
+        const planText = discussionPlan.stages
+          .map((stage) => {
+            const names = stage.roles.map((role) => role.name).join("、");
+            return stage.rounds > 1 ? `${names} x${stage.rounds}` : names;
+          })
+          .join(" → ");
+        showNotice(t("mentionDispatching", { names: planText }));
+      }
     }
 
     try {
-      for (let roundIndex = 0; roundIndex < rounds; roundIndex += 1) {
-        for (const role of discussionRoles) {
-          if (abortController.signal.aborted) {
-            return;
-          }
+      for (const stage of discussionPlan.stages) {
+        for (let roundIndex = 0; roundIndex < stage.rounds; roundIndex += 1) {
+          for (const role of stage.roles) {
+            if (abortController.signal.aborted) {
+              return;
+            }
 
-          setSpeakingRoleId(role.id);
-          const pendingMessage = makeAssistantMessage(room.id, role, t("thinking"), "pending");
-          messages = [...messages, pendingMessage];
-          commitMessages(room.id, messages);
-
-          const provider = getProviderForRole(role, snapshot.providers);
-
-          try {
-            const response = await callModel({
-              provider,
-              model: role.model || provider.defaultModel,
-              systemPrompt: buildRoleSystemPrompt(role, room, snapshot.roles, snapshot.settings.language),
-              messages: messagesToModelMessages(messages.filter((message) => message.id !== pendingMessage.id)),
-              signal: abortController.signal
-            });
-
-            messages = messages.map((message) =>
-              message.id === pendingMessage.id
-                ? {
-                    ...message,
-                    content: response.content,
-                    status: "success",
-                    error: undefined
-                  }
-                : message
-            );
+            setSpeakingRoleId(role.id);
+            const pendingMessage = makeAssistantMessage(room.id, role, t("thinking"), "pending");
+            messages = [...messages, pendingMessage];
             commitMessages(room.id, messages);
-          } catch (error) {
-            const friendlyError = toFriendlyError(error);
-            messages = messages.map((message) =>
-              message.id === pendingMessage.id
-                ? {
-                    ...message,
-                    content: friendlyError,
-                    status: "error",
-                    error: friendlyError
-                  }
-                : message
-            );
-            commitMessages(room.id, messages);
+
+            const provider = getProviderForRole(role, snapshot.providers);
+
+            try {
+              const response = await callModel({
+                provider,
+                model: role.model || provider.defaultModel,
+                systemPrompt: buildRoleSystemPrompt(
+                  role,
+                  room,
+                  snapshot.roles,
+                  snapshot.settings.language,
+                  mentionedRoles.map((item) => item.name)
+                ),
+                messages: messagesToModelMessages(messages.filter((message) => message.id !== pendingMessage.id)),
+                signal: abortController.signal
+              });
+
+              messages = messages.map((message) =>
+                message.id === pendingMessage.id
+                  ? {
+                      ...message,
+                      content: response.content,
+                      status: "success",
+                      error: undefined
+                    }
+                  : message
+              );
+              commitMessages(room.id, messages);
+            } catch (error) {
+              const friendlyError = toFriendlyError(error);
+              messages = messages.map((message) =>
+                message.id === pendingMessage.id
+                  ? {
+                      ...message,
+                      content: friendlyError,
+                      status: "error",
+                      error: friendlyError
+                    }
+                  : message
+              );
+              commitMessages(room.id, messages);
+            }
 
             if (abortController.signal.aborted) {
               return;
             }
+
+            await waitBetweenModelCalls(abortController.signal);
           }
         }
       }
@@ -563,7 +636,8 @@ export function RoundtableApp() {
             activeRoomId={state.activeRoomId}
             onViewChange={setActiveView}
             onRoomSelect={(roomId) => setState((current) => ({ ...current, activeRoomId: roomId }))}
-            onCreateRoom={() => setNewRoomOpen(true)}
+            onCreateGroupRoom={() => openNewRoomDialog("group")}
+            onCreatePrivateRoom={() => openNewRoomDialog("private")}
             onRenameRoom={renameRoom}
             onDuplicateRoom={duplicateRoom}
             onDeleteRoom={deleteRoom}
@@ -578,16 +652,13 @@ export function RoundtableApp() {
                 isRunning={isRunning}
                 speakingRoleId={speakingRoleId}
                 onUpdateRoom={updateRoom}
-                onStart={(topic, rounds) => void runDiscussion(rounds, topic)}
+                onStart={(topic, rounds, attachments) => void runDiscussion(rounds, topic, attachments)}
                 onContinue={(rounds) => void runDiscussion(rounds)}
                 onStop={stopDiscussion}
                 onSummarize={() => void summarizeRoom()}
                 onClear={clearCurrentRoom}
                 onCopyMessage={(message) => void copyMessage(message)}
                 onDeleteMessage={deleteMessage}
-                onExportJson={exportJson}
-                onExportMarkdown={exportMarkdown}
-                onExportText={exportText}
               />
             ) : null}
 
@@ -596,7 +667,13 @@ export function RoundtableApp() {
             ) : null}
 
             {activeView === "providers" ? (
-              <ProvidersView providers={state.providers} onSave={saveProvider} onDelete={deleteProvider} />
+              <ProvidersView
+                providers={state.providers}
+                onSave={saveProvider}
+                onDelete={deleteProvider}
+                onTest={testProvider}
+                testingProviderId={testingProviderId}
+              />
             ) : null}
 
             {activeView === "history" ? (
@@ -615,8 +692,13 @@ export function RoundtableApp() {
 
             <NewRoomDialog
               open={newRoomOpen}
+              mode={newRoomMode}
               roles={state.roles}
-              defaultName={t("newRoundtableName", { count: state.rooms.length + 1 })}
+              defaultName={
+                newRoomMode === "private"
+                  ? t("newPrivateRoomName", { count: state.rooms.length + 1 })
+                  : t("newRoundtableName", { count: state.rooms.length + 1 })
+              }
               onClose={() => setNewRoomOpen(false)}
               onCreate={createRoom}
             />

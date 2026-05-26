@@ -1,11 +1,11 @@
 {
   "name": "ai-roundtable",
-  "version": "0.1.0",
+  "version": "2.1.0",
   "private": true,
   "productName": "AI圆桌",
   "main": "electron/main.cjs",
   "scripts": {
-    "dev": "WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=true next dev",
+    "dev": "NEXT_STATIC_EXPORT=0 WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=true next dev",
     "build": "next build",
     "dist:mac": "npm run build && node scripts/package-mac.cjs",
     "dist:win": "npm run build && node scripts/package-win.cjs",

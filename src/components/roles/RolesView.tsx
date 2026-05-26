@@ -70,6 +70,11 @@ export function RolesView({ roles, providers, onSave, onDelete }: RolesViewProps
                         {role.enabled ? t("enabled") : t("disabled")}
                       </span>
                     </div>
+                    {role.identityFileContent ? (
+                      <p className="mt-2 inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">
+                        {t("identityFileLoaded", { name: role.identityFileName || t("identityFile") })}
+                      </p>
+                    ) : null}
                     <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-600">{role.systemPrompt}</p>
                     <p className="mt-3 text-sm text-gray-500">{t("provider")}：{provider?.name || t("unspecified")}</p>
                     <p className="mt-1 text-sm text-gray-500">{t("model")}：{role.model || provider?.defaultModel || t("useProviderDefault")}</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { ImagePlus, X } from "lucide-react";
+import { FileText, ImagePlus, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { providerTemplates } from "@/lib/defaults";
 import { useI18n } from "@/lib/i18n-context";
@@ -43,6 +43,46 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+function readFileAsText(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("identityFileReadFailed"));
+    reader.readAsText(file, "utf-8");
+  });
+}
+
+function isMarkdownIdentityFile(file: File) {
+  const name = file.name.toLowerCase();
+  return name.endsWith(".md") || name.endsWith(".markdown") || file.type === "text/markdown" || file.type === "text/plain" || file.type === "";
+}
+
+function filenameToRoleName(fileName: string) {
+  return fileName.replace(/\.(md|markdown|txt)$/i, "").trim();
+}
+
+function normalizeBaseUrl(value?: string) {
+  return (value || "").trim().replace(/\/+$/, "").toLowerCase();
+}
+
+function getModelOptionsForProvider(provider: ProviderConfig | undefined, providers: ProviderConfig[]) {
+  if (!provider) {
+    return [];
+  }
+
+  const providerBaseUrl = normalizeBaseUrl(provider.baseUrl);
+  const templateModels =
+    providerTemplates.find(
+      (template) => template.name === provider.name || normalizeBaseUrl(template.baseUrl) === providerBaseUrl
+    )?.recommendedModels || [];
+  const configuredModels = providers
+    .filter((item) => item.id === provider.id || item.name === provider.name || normalizeBaseUrl(item.baseUrl) === providerBaseUrl)
+    .map((item) => item.defaultModel.trim())
+    .filter(Boolean);
+
+  return Array.from(new Set([...configuredModels, ...templateModels]));
+}
+
 async function cropImageToSquare(file: File) {
   const dataUrl = await readFileAsDataUrl(file);
   const image = new Image();
@@ -71,25 +111,20 @@ async function cropImageToSquare(file: File) {
 export function RoleForm({ role, providers, onSave, onCancel }: RoleFormProps) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<AgentRole>(role || createBlankRole());
+  const [identityFileName, setIdentityFileName] = useState(role?.identityFileName || "");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const identityFileInputRef = useRef<HTMLInputElement | null>(null);
   const selectedProvider = providers.find((provider) => provider.id === draft.providerId);
-  const modelOptions = useMemo(() => {
-    const templateModels =
-      providerTemplates.find(
-        (template) => template.name === selectedProvider?.name || template.baseUrl === selectedProvider?.baseUrl
-      )?.recommendedModels || [];
-
-    return Array.from(
-      new Set([draft.model, selectedProvider?.defaultModel, ...templateModels].filter((model): model is string => Boolean(model)))
-    );
-  }, [draft.model, selectedProvider]);
+  const modelOptions = useMemo(() => getModelOptionsForProvider(selectedProvider, providers), [providers, selectedProvider]);
+  const selectedModelValue = selectedProvider && modelOptions.includes(draft.model) ? draft.model : modelOptions[0] || "";
 
   const handleProviderChange = (providerId: string) => {
     const provider = providers.find((item) => item.id === providerId);
+    const nextModelOptions = getModelOptionsForProvider(provider, providers);
     setDraft((current) => ({
       ...current,
       providerId,
-      model: current.model || provider?.defaultModel || ""
+      model: nextModelOptions[0] || provider?.defaultModel || ""
     }));
   };
 
@@ -119,6 +154,47 @@ export function RoleForm({ role, providers, onSave, onCancel }: RoleFormProps) {
     }
   };
 
+  const handleIdentityFile = async (file?: File) => {
+    if (!file) {
+      return;
+    }
+
+    if (!isMarkdownIdentityFile(file)) {
+      window.alert(t("alertMarkdownOnly"));
+      return;
+    }
+
+    try {
+      const content = await readFileAsText(file);
+      const roleNameFromFile = filenameToRoleName(file.name);
+      const timestamp = nowIso();
+      setDraft((current) => ({
+        ...current,
+        name: current.name.trim() ? current.name : roleNameFromFile || current.name,
+        identityFileName: file.name,
+        identityFileContent: content,
+        identityFileUpdatedAt: timestamp
+      }));
+      setIdentityFileName(file.name);
+    } catch {
+      window.alert(t("identityFileReadFailed"));
+    } finally {
+      if (identityFileInputRef.current) {
+        identityFileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const removeIdentityFile = () => {
+    setDraft((current) => ({
+      ...current,
+      identityFileName: undefined,
+      identityFileContent: undefined,
+      identityFileUpdatedAt: undefined
+    }));
+    setIdentityFileName("");
+  };
+
   const handleSubmit = () => {
     const timestamp = nowIso();
     onSave({
@@ -129,7 +205,14 @@ export function RoleForm({ role, providers, onSave, onCancel }: RoleFormProps) {
         draft.systemPrompt.trim() ||
         t("defaultRolePrompt"),
       speakingStyle: draft.speakingStyle.trim() || t("defaultSpeakingStyle"),
-      model: draft.model.trim(),
+      identityFileName: draft.identityFileName,
+      identityFileContent: draft.identityFileContent?.trim() || undefined,
+      identityFileUpdatedAt: draft.identityFileContent?.trim() ? draft.identityFileUpdatedAt || timestamp : undefined,
+      model: selectedProvider
+        ? modelOptions.includes(draft.model.trim())
+          ? draft.model.trim()
+          : modelOptions[0] || selectedProvider.defaultModel || ""
+        : draft.model.trim(),
       updatedAt: timestamp,
       createdAt: draft.createdAt || timestamp
     });
@@ -197,12 +280,57 @@ export function RoleForm({ role, providers, onSave, onCancel }: RoleFormProps) {
         </Field>
       </div>
 
-      <Field label={t("identitySetting")}>
-        <Textarea
-          value={draft.systemPrompt}
-          placeholder={t("identityPlaceholder")}
-          onChange={(event) => setDraft((current) => ({ ...current, systemPrompt: event.target.value }))}
-        />
+      <Field label={t("identityFile")} hint={t("identityFileHint")}>
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" size="sm" onClick={() => identityFileInputRef.current?.click()}>
+              <FileText className="h-4 w-4" />
+              {t("uploadIdentityFile")}
+            </Button>
+            <span className="text-xs text-slate-500">
+              {identityFileName ? t("identityFileLoaded", { name: identityFileName }) : t("identityFile")}
+            </span>
+            {draft.identityFileContent ? (
+              <Button type="button" size="sm" variant="ghost" onClick={removeIdentityFile}>
+                <X className="h-4 w-4" />
+                {t("removeIdentityFile")}
+              </Button>
+            ) : null}
+          </div>
+          <input
+            ref={identityFileInputRef}
+            type="file"
+            accept=".md,.markdown,.txt,text/markdown,text/plain"
+            className="hidden"
+            onChange={(event) => void handleIdentityFile(event.target.files?.[0])}
+          />
+          {draft.identityFileContent ? (
+            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3">
+              <div className="flex items-start gap-2 text-xs text-indigo-900">
+                <FileText className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <div className="font-semibold">{t("identityFileBoundTitle")}</div>
+                  <div className="mt-1 leading-5 text-indigo-700">{t("identityFileBoundDesc")}</div>
+                </div>
+              </div>
+              <pre className="mt-3 max-h-28 overflow-y-auto whitespace-pre-wrap rounded-xl bg-white/80 p-3 text-xs leading-5 text-slate-600 scrollbar-thin">
+                {draft.identityFileContent.slice(0, 1200)}
+                {draft.identityFileContent.length > 1200 ? "\n..." : ""}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      </Field>
+
+      <Field label={t("identitySetting")} hint={t("identitySupplementHint")}>
+        <div className="space-y-2">
+          <Textarea
+            className="min-h-36"
+            value={draft.systemPrompt}
+            placeholder={t("identityPlaceholder")}
+            onChange={(event) => setDraft((current) => ({ ...current, systemPrompt: event.target.value }))}
+          />
+        </div>
       </Field>
 
       <Field label={t("speakingStyle")}>
@@ -229,17 +357,20 @@ export function RoleForm({ role, providers, onSave, onCancel }: RoleFormProps) {
           </Select>
         </Field>
         <Field label={t("defaultModel")} hint={t("defaultModelHint")}>
-          <TextInput
-            value={draft.model}
-            list="role-models"
-            placeholder={selectedProvider?.defaultModel || t("anyModelPlaceholder")}
+          <Select
+            value={selectedModelValue}
             onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}
-          />
-          <datalist id="role-models">
+            disabled={!selectedProvider || modelOptions.length === 0}
+          >
+            {modelOptions.length === 0 ? (
+              <option value="">{selectedProvider ? t("useProviderDefault") : t("noProviderOption")}</option>
+            ) : null}
             {modelOptions.map((model) => (
-              <option key={model} value={model} />
+              <option key={model} value={model}>
+                {model}
+              </option>
             ))}
-          </datalist>
+          </Select>
         </Field>
       </div>
 

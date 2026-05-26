@@ -2,6 +2,8 @@ import type { AgentRole, AppState, ChatRoom, ProviderTemplate } from "@/lib/type
 import { defaultLanguageCode } from "@/lib/languages";
 import { nowIso } from "@/lib/utils";
 
+export const FILE_MASTER_ROLE_ID = "role-file-master";
+
 export const providerTemplates: ProviderTemplate[] = [
   {
     name: "OpenAI",
@@ -24,8 +26,8 @@ export const providerTemplates: ProviderTemplate[] = [
   {
     name: "Kimi",
     protocol: "openai-compatible",
-    baseUrl: "https://api.moonshot.ai/v1",
-    recommendedModels: ["kimi-k2.5"]
+    baseUrl: "https://api.moonshot.cn/v1",
+    recommendedModels: ["kimi-k2-0711-preview", "moonshot-v1-8k", "moonshot-v1-32k"]
   },
   {
     name: "GLM 智谱",
@@ -54,7 +56,7 @@ export const providerTemplates: ProviderTemplate[] = [
   {
     name: "MiniMax",
     protocol: "openai-compatible",
-    baseUrl: "https://api.minimax.io/v1",
+    baseUrl: "https://api.minimaxi.com/v1",
     recommendedModels: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed"]
   },
   {
@@ -137,6 +139,16 @@ export const rolePresets: Array<Pick<AgentRole, "id" | "name" | "avatarColor" | 
       "你是创意顾问。你的目标是提出新颖方向、差异化思路和发散方案，同时把创意和当前讨论目标连接起来。",
     speakingStyle: "开放、灵活、富有想象力，但每次至少落到一个具体建议。",
     enabled: true
+  },
+  {
+    id: FILE_MASTER_ROLE_ID,
+    name: "文件大师",
+    avatarColor: "#4f46e5",
+    systemPrompt:
+      "你是文件大师。你的职责不是参与普通头脑风暴，而是在用户明确 @你 或要求最终交付文件时，读取前面的完整讨论上下文，把共识、结论、文章、方案或表格整合成可下载文件。你需要决定合适的文件类型，并用文件块输出。Word 文件请使用 docx，普通文本用 txt，结构化方案用 md，表格数据用 csv 或 xlsx，网页稿用 html。生成 Word 时需要考虑文档排版，使用清晰标题层级、字号和字体。",
+    speakingStyle:
+      "交付导向、细致、像专业文档编辑。先用一句话说明已整理，然后输出文件块；不要把每个中间回复都转成文件。",
+    enabled: true
   }
 ];
 
@@ -154,7 +166,8 @@ export function createDefaultRoom(roles: AgentRole[], createdAt = nowIso()): Cha
   return {
     id: "room-default",
     name: "默认圆桌",
-    roleIds: roles.map((role) => role.id),
+    mode: "group",
+    roleIds: roles.filter((role) => role.id !== FILE_MASTER_ROLE_ID).map((role) => role.id),
     defaultRounds: 2,
     messages: [],
     createdAt,

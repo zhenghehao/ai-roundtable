@@ -4,6 +4,12 @@ export type MessageRole = "user" | "assistant" | "summary";
 
 export type MessageStatus = "pending" | "success" | "error";
 
+export type RoomMode = "group" | "private";
+
+export type ChatAttachmentKind = "image" | "pdf" | "document" | "spreadsheet" | "presentation" | "text" | "html" | "unknown";
+
+export type ChatAttachmentStatus = "ready" | "partial" | "unsupported" | "error";
+
 export type LanguageCode =
   | "en"
   | "zh-Hans"
@@ -33,6 +39,7 @@ export interface ProviderConfig {
   note: string;
   createdAt: string;
   updatedAt: string;
+  lastTestStatus?: "success" | "failed" | "untested";
 }
 
 export interface ProviderTemplate {
@@ -47,6 +54,9 @@ export interface AgentRole {
   name: string;
   avatarColor: string;
   avatarImage?: string;
+  identityFileName?: string;
+  identityFileContent?: string;
+  identityFileUpdatedAt?: string;
   systemPrompt: string;
   speakingStyle: string;
   providerId: string;
@@ -56,6 +66,19 @@ export interface AgentRole {
   updatedAt: string;
 }
 
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: ChatAttachmentKind;
+  dataUrl?: string;
+  extractedText?: string;
+  status: ChatAttachmentStatus;
+  error?: string;
+  createdAt: string;
+}
+
 export interface ChatMessage {
   id: string;
   roomId: string;
@@ -63,6 +86,7 @@ export interface ChatMessage {
   roleId?: string;
   roleName: string;
   content: string;
+  attachments?: ChatAttachment[];
   createdAt: string;
   status: MessageStatus;
   error?: string;
@@ -71,6 +95,7 @@ export interface ChatMessage {
 export interface ChatRoom {
   id: string;
   name: string;
+  mode: RoomMode;
   roleIds: string[];
   defaultRounds: number;
   messages: ChatMessage[];
@@ -90,6 +115,7 @@ export interface AppState {
 export interface ModelMessage {
   role: "user" | "assistant";
   content: string;
+  attachments?: ChatAttachment[];
 }
 
 export interface ModelInput {

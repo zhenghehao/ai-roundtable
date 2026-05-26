@@ -1,7 +1,8 @@
-import { createDefaultAppState } from "@/lib/defaults";
+import { FILE_MASTER_ROLE_ID, createDefaultAppState } from "@/lib/defaults";
 import type { Translator } from "@/lib/i18n";
 import { defaultLanguageCode, languageOptions } from "@/lib/languages";
-import type { AppState, ChatMessage, ChatRoom } from "@/lib/types";
+import { normalizeKnownProviderEndpoint } from "@/lib/providers";
+import type { AgentRole, AppState, ChatAttachment, ChatMessage, ChatRoom } from "@/lib/types";
 
 const STORAGE_KEY = "ai-roundtable-state-v1";
 
@@ -16,15 +17,24 @@ function normalizeState(value: Partial<AppState> | null): AppState {
     return fallback;
   }
 
-  const rooms = Array.isArray(value.rooms) && value.rooms.length > 0 ? value.rooms : fallback.rooms;
+  const rooms: ChatRoom[] = Array.isArray(value.rooms) && value.rooms.length > 0
+    ? value.rooms.map((room): ChatRoom => ({
+        ...room,
+        mode: room.mode === "private" ? "private" : "group"
+      }))
+    : fallback.rooms;
   const activeRoomId = rooms.some((room) => room.id === value.activeRoomId) ? String(value.activeRoomId) : rooms[0].id;
   const language = languageOptions.some((option) => option.code === value.settings?.language)
     ? value.settings?.language || defaultLanguageCode
     : defaultLanguageCode;
+  const savedRoles = Array.isArray(value.roles) && value.roles.length > 0 ? (value.roles as AgentRole[]) : fallback.roles;
+  const roleIds = new Set(savedRoles.map((role) => role.id));
+  const fileMasterRole = fallback.roles.find((role) => role.id === FILE_MASTER_ROLE_ID);
+  const roles = fileMasterRole && !roleIds.has(FILE_MASTER_ROLE_ID) ? [...savedRoles, fileMasterRole] : savedRoles;
 
   return {
-    providers: Array.isArray(value.providers) ? value.providers : fallback.providers,
-    roles: Array.isArray(value.roles) && value.roles.length > 0 ? value.roles : fallback.roles,
+    providers: Array.isArray(value.providers) ? value.providers.map(normalizeKnownProviderEndpoint) : fallback.providers,
+    roles,
     rooms,
     activeRoomId,
     settings: {
@@ -105,6 +115,13 @@ export function serializeRoomAsMarkdown(room: ChatRoom, t?: Translator) {
       }
       lines.push("");
       lines.push(message.content || t?.("markdownEmpty") || "（空）");
+      if (message.attachments?.length) {
+        lines.push("");
+        lines.push("附件：");
+        message.attachments.forEach((attachment) => {
+          lines.push(`- ${attachment.name} (${attachment.mimeType || attachment.kind})`);
+        });
+      }
       lines.push("");
     });
   }
@@ -131,6 +148,12 @@ export function serializeRoomAsText(room: ChatRoom, t?: Translator) {
         lines.push(`${t?.("markdownError") || "错误"}：${message.error}`);
       }
       lines.push(message.content || t?.("markdownEmpty") || "（空）");
+      if (message.attachments?.length) {
+        lines.push("附件：");
+        message.attachments.forEach((attachment) => {
+          lines.push(`- ${attachment.name} (${attachment.mimeType || attachment.kind})`);
+        });
+      }
       lines.push("");
     });
   }
@@ -163,6 +186,23 @@ export function parseImportedMessages(raw: string): ChatMessage[] {
       roleId: item.roleId,
       roleName: String(item.roleName || "未知角色"),
       content: String(item.content),
+      attachments: Array.isArray(item.attachments)
+        ? item.attachments.map((attachment) => {
+            const file = attachment as Partial<ChatAttachment>;
+            return {
+              id: String(file.id || ""),
+              name: String(file.name || "未命名附件"),
+              mimeType: String(file.mimeType || "application/octet-stream"),
+              size: Number(file.size || 0),
+              kind: file.kind || "unknown",
+              dataUrl: file.dataUrl ? String(file.dataUrl) : undefined,
+              extractedText: file.extractedText ? String(file.extractedText) : undefined,
+              status: file.status || "partial",
+              error: file.error ? String(file.error) : undefined,
+              createdAt: String(file.createdAt || new Date().toISOString())
+            };
+          })
+        : undefined,
       createdAt: String(item.createdAt),
       status: item.status === "pending" || item.status === "error" ? item.status : "success",
       error: item.error ? String(item.error) : undefined

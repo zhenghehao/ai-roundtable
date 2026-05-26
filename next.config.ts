@@ -1,9 +1,11 @@
 import type { NextConfig } from "next";
 
+const isStaticExport = process.env.NEXT_STATIC_EXPORT !== "0";
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  output: "export",
-  assetPrefix: "./",
+  output: isStaticExport ? "export" : undefined,
+  assetPrefix: isStaticExport ? "./" : undefined,
   outputFileTracingRoot: process.cwd(),
   watchOptions: {
     pollIntervalMs: 1000
