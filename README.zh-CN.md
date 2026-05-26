@@ -311,6 +311,18 @@ npm run build
 
 构建结果会输出到 `out/` 目录。
 
+## 部署到 Vercel
+
+Vercel 上需要以 Next.js 应用方式运行 AI圆桌，并启用 `/api/model` 接口。项目会在检测到 `VERCEL=1` 时自动关闭静态导出，让模型请求可以通过服务端接口转发。
+
+部署后，可以在“模型配置”页面点击“测试连接”。如果看到 `/api/model` 返回 404，说明线上接口没有部署出来，请用最新代码重新部署，并确认 Vercel 使用默认构建命令：
+
+```bash
+npm run build
+```
+
+隐私提示：在 Vercel 托管版本中，API Key 仍然保存在用户浏览器 localStorage，但每次模型调用会经过 Vercel 的 `/api/model` 接口转发到模型供应商，因为很多模型供应商不允许浏览器直接跨域请求。
+
 ## 打包桌面应用
 
 macOS：

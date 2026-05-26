@@ -54,6 +54,13 @@ export async function callModel(input: ModelInput): Promise<ModelResponse> {
     const payload = await response.json().catch(() => null);
 
     if (!response.ok) {
+      if (!payload && response.status === 404) {
+        throw new ModelAdapterError("线上模型接口未部署成功：/api/model 返回 404。请重新部署 Vercel，并确认构建时没有使用静态导出模式。", {
+          status: response.status,
+          detail: "Vercel API route /api/model not found"
+        });
+      }
+
       throw new ModelAdapterError(payload?.friendlyMessage || payload?.message || "模型连接失败，请检查配置后重试。", {
         status: typeof payload?.status === "number" ? payload.status : response.status,
         detail: payload?.message

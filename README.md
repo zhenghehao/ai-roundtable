@@ -321,6 +321,18 @@ npm run build
 
 The static output is generated in `out/`.
 
+## Deploy To Vercel
+
+Vercel must run AI Roundtable as a Next.js app with the `/api/model` route enabled. The app automatically disables static export when `VERCEL=1`, so provider requests can be proxied through the server route.
+
+After deploying, test a provider from the Model Configurations page. If you see `/api/model` returning 404, redeploy from the latest code and make sure the Vercel project is using the default Next.js build command:
+
+```bash
+npm run build
+```
+
+Privacy note: when using the hosted Vercel version, API keys are still stored in the user's browser localStorage, but each model call is sent through the Vercel API route to reach providers that do not allow browser-side requests.
+
 ## Build Desktop Apps
 
 macOS:

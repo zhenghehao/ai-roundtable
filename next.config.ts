@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
-const isStaticExport = process.env.NEXT_STATIC_EXPORT !== "0";
+const isVercel = process.env.VERCEL === "1";
+const isStaticExport = !isVercel && process.env.NEXT_STATIC_EXPORT !== "0";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
