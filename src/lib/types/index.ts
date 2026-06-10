@@ -92,6 +92,13 @@ export interface ChatMessage {
   error?: string;
 }
 
+export interface RoomContextMemory {
+  summary: string;
+  sourceMessageCount: number;
+  throughMessageId: string;
+  updatedAt: string;
+}
+
 export interface ChatRoom {
   id: string;
   name: string;
@@ -99,6 +106,7 @@ export interface ChatRoom {
   roleIds: string[];
   defaultRounds: number;
   messages: ChatMessage[];
+  contextMemory?: RoomContextMemory;
   createdAt: string;
   updatedAt: string;
 }

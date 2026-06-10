@@ -12,12 +12,20 @@ import { type AppView, Sidebar } from "@/components/Sidebar";
 import { I18nProvider } from "@/lib/i18n-context";
 import { createTranslator } from "@/lib/i18n";
 import {
+  buildContextCompressionMessages,
+  buildContextCompressionSystemPrompt,
+  buildDeterministicContextDigest,
+  buildRoundtableContextMessages,
   buildRoleSystemPrompt,
   buildSummarySystemPrompt,
-  getDiscussionRoles,
+  chunkMessagesForContextCompression,
+  createRoomContextMemory,
+  detectRoleBoundaryViolation,
+  getDiscussionTaskKind,
   getMentionedDiscussionPlan,
   getSummaryRole,
-  messagesToModelMessages
+  planContextCompression,
+  type RoleExecutionContext
 } from "@/lib/chat";
 import { buildConnectionTestReport, callModel, toFriendlyError } from "@/lib/model-adapters";
 import { createDefaultAppState } from "@/lib/defaults";
@@ -30,7 +38,17 @@ import {
   serializeRoomAsMarkdown,
   serializeRoomAsText
 } from "@/lib/storage/app-storage";
-import type { AgentRole, AppState, ChatAttachment, ChatMessage, ChatRoom, ProviderConfig, RoomMode } from "@/lib/types";
+import type {
+  AgentRole,
+  AppState,
+  ChatAttachment,
+  ChatMessage,
+  ChatRoom,
+  ModelMessage,
+  ProviderConfig,
+  RoomContextMemory,
+  RoomMode
+} from "@/lib/types";
 import { copyText, createId, downloadText, nowIso } from "@/lib/utils";
 
 export function RoundtableApp() {
@@ -128,6 +146,20 @@ export function RoundtableApp() {
           ? {
               ...room,
               messages,
+              updatedAt: nowIso()
+            }
+          : room
+      )
+    );
+  };
+
+  const commitContextMemory = (roomId: string, contextMemory?: RoomContextMemory) => {
+    updateRooms((rooms) =>
+      rooms.map((room) =>
+        room.id === roomId
+          ? {
+              ...room,
+              contextMemory,
               updatedAt: nowIso()
             }
           : room
@@ -259,6 +291,7 @@ export function RoundtableApp() {
             createdAt: message.createdAt
           }))
         : [],
+      contextMemory: undefined,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -319,6 +352,51 @@ export function RoundtableApp() {
     return providers.find((provider) => provider.id === role.providerId) || providers[0];
   };
 
+  const prepareRoundtableContext = async (input: {
+    room: ChatRoom;
+    messages: ChatMessage[];
+    contextMemory?: RoomContextMemory;
+    provider: ProviderConfig;
+    model: string;
+    signal: AbortSignal;
+    executionInstruction: string;
+  }): Promise<{ messages: ModelMessage[]; contextMemory?: RoomContextMemory }> => {
+    const plan = planContextCompression(input.messages, input.contextMemory);
+    let nextMemory = plan.reusableMemory;
+
+    if (plan.archivedMessages.length > 0 && plan.messagesToCompress.length > 0) {
+      let summary = plan.reusableMemory?.summary || "";
+
+      try {
+        const batches = chunkMessagesForContextCompression(plan.messagesToCompress);
+        for (const batch of batches) {
+          const compressionResponse = await callModel({
+            provider: input.provider,
+            model: input.model,
+            systemPrompt: buildContextCompressionSystemPrompt(stateRef.current.settings.language),
+            messages: buildContextCompressionMessages(batch, summary),
+            signal: input.signal
+          });
+          summary = compressionResponse.content;
+        }
+      } catch (error) {
+        if (input.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+          throw error;
+        }
+        summary = buildDeterministicContextDigest(plan.archivedMessages);
+      }
+
+      nextMemory = createRoomContextMemory(plan.archivedMessages, summary);
+      commitContextMemory(input.room.id, nextMemory);
+    }
+
+    const effectiveMemory = plan.archivedMessages.length > 0 ? nextMemory : undefined;
+    return {
+      messages: buildRoundtableContextMessages(plan.recentMessages, effectiveMemory, input.executionInstruction),
+      contextMemory: nextMemory
+    };
+  };
+
   const testProvider = async (provider: ProviderConfig) => {
     setTestingProviderId(provider.id);
 
@@ -374,6 +452,7 @@ export function RoundtableApp() {
     setSpeakingRoleId(undefined);
 
     let messages = room.messages;
+    let contextMemory = room.contextMemory;
     if (topic || attachments.length > 0) {
       messages = [...messages, makeUserMessage(room.id, topic || t("defaultAttachmentTopic"), attachments)];
       commitMessages(room.id, messages);
@@ -389,9 +468,11 @@ export function RoundtableApp() {
     }
 
     try {
-      for (const stage of discussionPlan.stages) {
+      for (let stageIndex = 0; stageIndex < discussionPlan.stages.length; stageIndex += 1) {
+        const stage = discussionPlan.stages[stageIndex];
         for (let roundIndex = 0; roundIndex < stage.rounds; roundIndex += 1) {
-          for (const role of stage.roles) {
+          for (let speakerIndex = 0; speakerIndex < stage.roles.length; speakerIndex += 1) {
+            const role = stage.roles[speakerIndex];
             if (abortController.signal.aborted) {
               return;
             }
@@ -404,19 +485,68 @@ export function RoundtableApp() {
             const provider = getProviderForRole(role, snapshot.providers);
 
             try {
-              const response = await callModel({
+              const taskKind = getDiscussionTaskKind(
+                role,
+                stage,
+                mentionedRoles.some((mentionedRole) => mentionedRole.id === role.id)
+              );
+              const execution: RoleExecutionContext = {
+                stageIndex,
+                stageCount: discussionPlan.stages.length,
+                roundIndex,
+                roundCount: stage.rounds,
+                speakerIndex,
+                speakerCount: stage.roles.length,
+                taskKind,
+                stageInstruction: stage.instruction
+              };
+              const executionInstruction = [
+                `现在轮到「${role.name}」发言。`,
+                `任务模式：${taskKind}。`,
+                stage.instruction ? `只处理当前阶段指令：${stage.instruction}` : "围绕已有议题继续推进。",
+                "不要执行其他角色或后续阶段的任务。"
+              ].join("\n");
+              const preparedContext = await prepareRoundtableContext({
+                room,
+                messages: messages.filter((message) => message.id !== pendingMessage.id),
+                contextMemory,
                 provider,
                 model: role.model || provider.defaultModel,
-                systemPrompt: buildRoleSystemPrompt(
-                  role,
-                  room,
-                  snapshot.roles,
-                  snapshot.settings.language,
-                  mentionedRoles.map((item) => item.name)
-                ),
-                messages: messagesToModelMessages(messages.filter((message) => message.id !== pendingMessage.id)),
+                signal: abortController.signal,
+                executionInstruction
+              });
+              contextMemory = preparedContext.contextMemory;
+              const systemPrompt = buildRoleSystemPrompt(
+                role,
+                room,
+                snapshot.roles,
+                snapshot.settings.language,
+                mentionedRoles.map((item) => item.name),
+                execution
+              );
+              let response = await callModel({
+                provider,
+                model: role.model || provider.defaultModel,
+                systemPrompt,
+                messages: preparedContext.messages,
                 signal: abortController.signal
               });
+
+              if (detectRoleBoundaryViolation(response.content, role, snapshot.roles, taskKind)) {
+                response = await callModel({
+                  provider,
+                  model: role.model || provider.defaultModel,
+                  systemPrompt: [
+                    systemPrompt,
+                    "",
+                    "【身份边界纠正】",
+                    `上一版输出出现了身份或任务越界。重新回答时只能作为「${role.name}」完成当前这一次任务。`,
+                    "不要冒充其他角色；普通讨论模式不要输出整场总结；直接给出修正后的正文。"
+                  ].join("\n"),
+                  messages: preparedContext.messages,
+                  signal: abortController.signal
+                });
+              }
 
               messages = messages.map((message) =>
                 message.id === pendingMessage.id
@@ -485,6 +615,7 @@ export function RoundtableApp() {
     setSpeakingRoleId(role.id);
 
     let messages = room.messages;
+    let contextMemory = room.contextMemory;
     const pendingMessage: ChatMessage = {
       ...makeAssistantMessage(room.id, role, t("summarizing"), "pending"),
       role: "summary",
@@ -494,12 +625,22 @@ export function RoundtableApp() {
     commitMessages(room.id, messages);
 
     try {
+      const preparedContext = await prepareRoundtableContext({
+        room,
+        messages: messages.filter((message) => message.id !== pendingMessage.id),
+        contextMemory,
+        provider,
+        model: role.model || provider.defaultModel,
+        signal: abortController.signal,
+        executionInstruction: "生成整场圆桌总结。只做总结，不模拟参会角色继续发言。"
+      });
+      contextMemory = preparedContext.contextMemory;
       const response = await callModel({
         provider,
         model: role.model || provider.defaultModel,
         systemPrompt: buildSummarySystemPrompt(role, room, snapshot.roles, snapshot.settings.language),
         messages: [
-          ...messagesToModelMessages(messages.filter((message) => message.id !== pendingMessage.id)),
+          ...preparedContext.messages,
           {
             role: "user",
             content: "请基于以上完整群聊生成总结，包含：核心结论、主要分歧、风险点、可执行下一步。"
@@ -551,7 +692,11 @@ export function RoundtableApp() {
       return;
     }
 
-    commitMessages(activeRoom.id, []);
+    updateRoom({
+      ...activeRoom,
+      messages: [],
+      contextMemory: undefined
+    });
     showNotice(t("roomCleared"));
   };
 
@@ -565,10 +710,11 @@ export function RoundtableApp() {
       return;
     }
 
-    commitMessages(
-      activeRoom.id,
-      activeRoom.messages.filter((message) => message.id !== messageId)
-    );
+    updateRoom({
+      ...activeRoom,
+      messages: activeRoom.messages.filter((message) => message.id !== messageId),
+      contextMemory: undefined
+    });
     showNotice(t("messageDeleted"));
   };
 
@@ -608,7 +754,11 @@ export function RoundtableApp() {
         roomId: activeRoom.id,
         status: message.status === "pending" ? "success" : message.status
       }));
-      commitMessages(activeRoom.id, importedMessages);
+      updateRoom({
+        ...activeRoom,
+        messages: importedMessages,
+        contextMemory: undefined
+      });
       showNotice(t("historyImported"));
     } catch (error) {
       window.alert(error instanceof Error ? error.message : t("importFailed"));

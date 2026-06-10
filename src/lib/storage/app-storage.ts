@@ -20,7 +20,14 @@ function normalizeState(value: Partial<AppState> | null): AppState {
   const rooms: ChatRoom[] = Array.isArray(value.rooms) && value.rooms.length > 0
     ? value.rooms.map((room): ChatRoom => ({
         ...room,
-        mode: room.mode === "private" ? "private" : "group"
+        mode: room.mode === "private" ? "private" : "group",
+        contextMemory:
+          room.contextMemory &&
+          typeof room.contextMemory.summary === "string" &&
+          typeof room.contextMemory.sourceMessageCount === "number" &&
+          typeof room.contextMemory.throughMessageId === "string"
+            ? room.contextMemory
+            : undefined
       }))
     : fallback.rooms;
   const activeRoomId = rooms.some((room) => room.id === value.activeRoomId) ? String(value.activeRoomId) : rooms[0].id;

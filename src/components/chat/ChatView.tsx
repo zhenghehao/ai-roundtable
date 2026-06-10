@@ -3,11 +3,13 @@
 import {
   ArrowUp,
   Bot,
+  Check,
   CheckCircle2,
   FileUp,
   Layers3,
   MessageCircle,
   Paperclip,
+  Pencil,
   Play,
   RotateCcw,
   Sparkles,
@@ -73,6 +75,8 @@ export function ChatView({
 }: ChatViewProps) {
   const { t } = useI18n();
   const [topic, setTopic] = useState("");
+  const [editingRoomName, setEditingRoomName] = useState(false);
+  const [roomNameDraft, setRoomNameDraft] = useState(room.name);
   const [mentionQuery, setMentionQuery] = useState<string | undefined>();
   const [mentionStart, setMentionStart] = useState<number | undefined>();
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
@@ -103,6 +107,28 @@ export function ChatView({
       messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     }
   }, [room.messages.length, room.messages.at(-1)?.content]);
+
+  useEffect(() => {
+    setRoomNameDraft(room.name);
+    setEditingRoomName(false);
+  }, [room.id, room.name]);
+
+  const saveRoomName = () => {
+    const nextName = roomNameDraft.trim();
+    if (!nextName) {
+      setRoomNameDraft(room.name);
+      setEditingRoomName(false);
+      return;
+    }
+
+    if (nextName !== room.name) {
+      onUpdateRoom({
+        ...room,
+        name: nextName
+      });
+    }
+    setEditingRoomName(false);
+  };
 
   const setRounds = (value: number) => {
     onUpdateRoom({
@@ -222,7 +248,44 @@ export function ChatView({
                 <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
                   <MessageCircle className="h-4 w-4" />
                 </div>
-                <h2 className="truncate text-xl font-semibold tracking-[-0.01em] text-slate-950">{room.name}</h2>
+                {editingRoomName ? (
+                  <div className="flex min-w-0 items-center gap-2">
+                    <input
+                      autoFocus
+                      className="h-10 min-w-0 max-w-xl flex-1 rounded-xl border border-indigo-300 bg-white px-3 text-lg font-semibold text-slate-950 outline-none ring-4 ring-indigo-100"
+                      value={roomNameDraft}
+                      onChange={(event) => setRoomNameDraft(event.target.value)}
+                      onBlur={saveRoomName}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          saveRoomName();
+                        }
+                        if (event.key === "Escape") {
+                          setRoomNameDraft(room.name);
+                          setEditingRoomName(false);
+                        }
+                      }}
+                    />
+                    <Button className="h-8 w-8 rounded-lg" size="icon" variant="ghost" title={t("saveRoomName")} onMouseDown={(event) => event.preventDefault()} onClick={saveRoomName}>
+                      <Check className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <h2 className="truncate text-xl font-semibold tracking-[-0.01em] text-slate-950">{room.name}</h2>
+                    <Button
+                      className="h-8 w-8 shrink-0 rounded-lg"
+                      size="icon"
+                      variant="ghost"
+                      title={t("editRoomName")}
+                      disabled={isRunning}
+                      onClick={() => setEditingRoomName(true)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
                 <span className="rounded-full bg-slate-100 px-2.5 py-1">

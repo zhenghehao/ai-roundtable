@@ -1,6 +1,6 @@
 import { ModelAdapterError } from "./errors";
 
-const REQUEST_TIMEOUT_MS = 120_000;
+const REQUEST_TIMEOUT_MS = 300_000;
 const MAX_RETRIES = 4;
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
