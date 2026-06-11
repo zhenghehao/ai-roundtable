@@ -1,6 +1,7 @@
 import { FILE_MASTER_ROLE_ID, createDefaultAppState } from "@/lib/defaults";
 import type { Translator } from "@/lib/i18n";
 import { defaultLanguageCode, languageOptions } from "@/lib/languages";
+import { createBuiltinLocalProviders, refreshBuiltinLocalProvider } from "@/lib/local-agents";
 import { normalizeKnownProviderEndpoint } from "@/lib/providers";
 import type { AgentRole, AppState, ChatAttachment, ChatMessage, ChatRoom } from "@/lib/types";
 
@@ -39,15 +40,28 @@ function normalizeState(value: Partial<AppState> | null): AppState {
   const fileMasterRole = fallback.roles.find((role) => role.id === FILE_MASTER_ROLE_ID);
   const roles = fileMasterRole && !roleIds.has(FILE_MASTER_ROLE_ID) ? [...savedRoles, fileMasterRole] : savedRoles;
 
+  const savedProviders = Array.isArray(value.providers)
+    ? value.providers.map(normalizeKnownProviderEndpoint).map(refreshBuiltinLocalProvider)
+    : [];
+  const providers =
+    Number(value.version || 1) < 2
+      ? [
+          ...savedProviders,
+          ...createBuiltinLocalProviders().filter(
+            (builtin) => !savedProviders.some((provider) => provider.id === builtin.id)
+          )
+        ]
+      : savedProviders;
+
   return {
-    providers: Array.isArray(value.providers) ? value.providers.map(normalizeKnownProviderEndpoint) : fallback.providers,
+    providers: providers.length > 0 ? providers : fallback.providers,
     roles,
     rooms,
     activeRoomId,
     settings: {
       language
     },
-    version: 1
+    version: 2
   };
 }
 

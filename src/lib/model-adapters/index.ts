@@ -42,6 +42,10 @@ export async function callModel(input: ModelInput): Promise<ModelResponse> {
   }
 
   if (typeof window !== "undefined") {
+    if (input.provider.protocol === "local-cli") {
+      throw new ModelAdapterError("本地 CLI 只能在 AI圆桌桌面版中调用。");
+    }
+
     const { signal: _signal, ...serializableInput } = input;
     const response = await fetch("/api/model", {
       method: "POST",
@@ -72,6 +76,10 @@ export async function callModel(input: ModelInput): Promise<ModelResponse> {
     }
 
     return cleanResponse(payload as ModelResponse);
+  }
+
+  if (input.provider.protocol === "local-cli") {
+    throw new ModelAdapterError("本地 CLI 只能在 AI圆桌桌面版中调用。");
   }
 
   if (input.provider.protocol === "anthropic") {

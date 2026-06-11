@@ -44,6 +44,8 @@ import type {
   ChatAttachment,
   ChatMessage,
   ChatRoom,
+  LocalAgentDetection,
+  LocalAgentDetectionRequest,
   ModelMessage,
   ProviderConfig,
   RoomContextMemory,
@@ -58,11 +60,42 @@ export function RoundtableApp() {
   const [isRunning, setIsRunning] = useState(false);
   const [speakingRoleId, setSpeakingRoleId] = useState<string | undefined>();
   const [testingProviderId, setTestingProviderId] = useState<string | undefined>();
+  const [localAgentDetections, setLocalAgentDetections] = useState<LocalAgentDetection[]>([]);
+  const [detectingLocalAgents, setDetectingLocalAgents] = useState(false);
   const [notice, setNotice] = useState("");
   const [newRoomOpen, setNewRoomOpen] = useState(false);
   const [newRoomMode, setNewRoomMode] = useState<RoomMode>("group");
   const stateRef = useRef(state);
   const abortRef = useRef<AbortController | null>(null);
+  const localAgentSignature = state.providers
+    .filter((provider) => provider.protocol === "local-cli" && provider.localCli)
+    .map(
+      (provider) =>
+        `${provider.id}:${provider.localCli?.commandCandidates.join("|")}:${provider.localCli?.detectionPaths?.join("|") || ""}`
+    )
+    .join(",");
+
+  const detectLocalAgents = async (providers = stateRef.current.providers) => {
+    const requests: LocalAgentDetectionRequest[] = providers
+      .filter((provider) => provider.protocol === "local-cli" && provider.localCli)
+      .map((provider) => ({
+        id: provider.id,
+        commandCandidates: provider.localCli?.commandCandidates || [],
+        detectionPaths: provider.localCli?.detectionPaths || []
+      }));
+
+    if (!window.roundtableDesktop?.detectLocalAgents) {
+      setLocalAgentDetections([]);
+      return;
+    }
+
+    setDetectingLocalAgents(true);
+    try {
+      setLocalAgentDetections(await window.roundtableDesktop.detectLocalAgents(requests));
+    } finally {
+      setDetectingLocalAgents(false);
+    }
+  };
 
   useEffect(() => {
     setState(loadAppState());
@@ -75,6 +108,12 @@ export function RoundtableApp() {
       saveAppState(state);
     }
   }, [loaded, state]);
+
+  useEffect(() => {
+    if (loaded) {
+      void detectLocalAgents(state.providers);
+    }
+  }, [loaded, localAgentSignature]);
 
   useEffect(() => {
     if (!notice) {
@@ -823,6 +862,9 @@ export function RoundtableApp() {
                 onDelete={deleteProvider}
                 onTest={testProvider}
                 testingProviderId={testingProviderId}
+                localAgentDetections={localAgentDetections}
+                detectingLocalAgents={detectingLocalAgents}
+                onDetectLocalAgents={() => void detectLocalAgents()}
               />
             ) : null}
 

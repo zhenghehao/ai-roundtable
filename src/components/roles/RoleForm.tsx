@@ -114,13 +114,19 @@ export function RoleForm({ role, providers, onSave, onCancel }: RoleFormProps) {
   const [identityFileName, setIdentityFileName] = useState(role?.identityFileName || "");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const identityFileInputRef = useRef<HTMLInputElement | null>(null);
-  const selectedProvider = providers.find((provider) => provider.id === draft.providerId);
-  const modelOptions = useMemo(() => getModelOptionsForProvider(selectedProvider, providers), [providers, selectedProvider]);
+  const availableProviders = providers.filter(
+    (provider) => provider.protocol !== "local-cli" || provider.localCli?.capability === "adapted"
+  );
+  const selectedProvider = availableProviders.find((provider) => provider.id === draft.providerId);
+  const modelOptions = useMemo(
+    () => getModelOptionsForProvider(selectedProvider, availableProviders),
+    [availableProviders, selectedProvider]
+  );
   const selectedModelValue = selectedProvider && modelOptions.includes(draft.model) ? draft.model : modelOptions[0] || "";
 
   const handleProviderChange = (providerId: string) => {
-    const provider = providers.find((item) => item.id === providerId);
-    const nextModelOptions = getModelOptionsForProvider(provider, providers);
+    const provider = availableProviders.find((item) => item.id === providerId);
+    const nextModelOptions = getModelOptionsForProvider(provider, availableProviders);
     setDraft((current) => ({
       ...current,
       providerId,
@@ -346,10 +352,10 @@ export function RoleForm({ role, providers, onSave, onCancel }: RoleFormProps) {
           <Select
             value={draft.providerId}
             onChange={(event) => handleProviderChange(event.target.value)}
-            disabled={providers.length === 0}
+            disabled={availableProviders.length === 0}
           >
-            <option value="">{providers.length === 0 ? t("noProviderConfigShort") : t("noProviderOption")}</option>
-            {providers.map((provider) => (
+            <option value="">{availableProviders.length === 0 ? t("noProviderConfigShort") : t("noProviderOption")}</option>
+            {availableProviders.map((provider) => (
               <option key={provider.id} value={provider.id}>
                 {provider.name}
               </option>

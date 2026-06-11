@@ -1,4 +1,10 @@
-export type ProviderProtocol = "openai-compatible" | "anthropic";
+export type ProviderProtocol = "openai-compatible" | "anthropic" | "local-cli";
+
+export type LocalAgentCapability = "adapted" | "detect-only";
+
+export type LocalCliInputMode = "stdin" | "argument";
+
+export type LocalCliOutputFormat = "text" | "json" | "jsonl";
 
 export type MessageRole = "user" | "assistant" | "summary";
 
@@ -40,6 +46,33 @@ export interface ProviderConfig {
   createdAt: string;
   updatedAt: string;
   lastTestStatus?: "success" | "failed" | "untested";
+  localCli?: LocalCliConfig;
+}
+
+export interface LocalCliConfig {
+  agentId: string;
+  commandCandidates: string[];
+  detectionPaths?: string[];
+  args: string[];
+  inputMode: LocalCliInputMode;
+  outputFormat: LocalCliOutputFormat;
+  resultPath?: string;
+  capability: LocalAgentCapability;
+  builtIn?: boolean;
+}
+
+export interface LocalAgentDetectionRequest {
+  id: string;
+  commandCandidates: string[];
+  detectionPaths?: string[];
+}
+
+export interface LocalAgentDetection {
+  id: string;
+  installed: boolean;
+  configured?: boolean;
+  command?: string;
+  path?: string;
 }
 
 export interface ProviderTemplate {

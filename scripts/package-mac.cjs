@@ -105,6 +105,12 @@ function updateInfoPlist() {
 
 function signAdHoc() {
   try {
+    run("xattr", ["-cr", appPath]);
+  } catch {
+    console.warn("未能清理应用扩展属性，将继续尝试签名。");
+  }
+
+  try {
     run("codesign", ["--force", "--deep", "--sign", "-", appPath]);
   } catch {
     console.warn("未能完成本地临时签名，应用仍已生成，但首次打开可能需要在系统设置中允许。");

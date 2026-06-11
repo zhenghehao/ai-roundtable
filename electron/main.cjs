@@ -1,10 +1,502 @@
 const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { spawn } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const pendingRequests = new Map();
 const REQUEST_TIMEOUT_MS = 300_000;
 const MAX_MODEL_RETRIES = 4;
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+const LOCAL_AGENT_TIMEOUT_MS = 300_000;
+const MAX_LOCAL_OUTPUT_BYTES = 4 * 1024 * 1024;
+
+function localExecutableSearchPaths() {
+  const home = os.homedir();
+  const candidates = [
+    ...(process.env.PATH || "").split(path.delimiter),
+    path.join(home, ".local", "bin"),
+    path.join(home, ".npm-global", "bin"),
+    path.join(home, ".volta", "bin"),
+    path.join(home, ".bun", "bin"),
+    path.join(home, ".cargo", "bin"),
+    "/opt/homebrew/bin",
+    "/opt/homebrew/sbin",
+    "/usr/local/bin",
+    "/usr/local/sbin",
+    "/usr/bin",
+    "/usr/sbin",
+    "/sbin",
+    "/bin"
+  ];
+  const workbuddyNodeRoot = path.join(home, ".workbuddy", "binaries", "node", "versions");
+
+  try {
+    for (const version of fs.readdirSync(workbuddyNodeRoot)) {
+      candidates.push(path.join(workbuddyNodeRoot, version, "bin"));
+    }
+  } catch {
+    // WorkBuddy is optional.
+  }
+
+  return Array.from(new Set(candidates.filter(Boolean)));
+}
+
+function executableFileNames(command) {
+  if (process.platform !== "win32") {
+    return [command];
+  }
+
+  const extension = path.extname(command);
+  return extension ? [command] : [command, `${command}.exe`, `${command}.cmd`, `${command}.bat`];
+}
+
+function isExecutable(filePath) {
+  try {
+    fs.accessSync(filePath, process.platform === "win32" ? fs.constants.F_OK : fs.constants.X_OK);
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function findExecutable(command) {
+  const value = String(command || "").trim();
+  if (!value) {
+    return undefined;
+  }
+
+  if (path.isAbsolute(value) || value.includes("/") || value.includes("\\")) {
+    const resolved = path.resolve(value);
+    return isExecutable(resolved) ? resolved : undefined;
+  }
+
+  for (const directory of localExecutableSearchPaths()) {
+    for (const fileName of executableFileNames(value)) {
+      const candidate = path.join(directory, fileName);
+      if (isExecutable(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function resolveDetectionPath(value) {
+  const candidate = String(value || "").trim();
+  if (!candidate) {
+    return undefined;
+  }
+
+  if (candidate === "~") {
+    return os.homedir();
+  }
+
+  if (candidate.startsWith("~/") || candidate.startsWith(`~${path.sep}`)) {
+    return path.join(os.homedir(), candidate.slice(2));
+  }
+
+  return path.resolve(candidate);
+}
+
+function hasDetectionMarker(detectionPaths) {
+  return (detectionPaths || []).some((detectionPath) => {
+    const resolved = resolveDetectionPath(detectionPath);
+    return Boolean(resolved && fs.existsSync(resolved));
+  });
+}
+
+function detectLocalAgent(request) {
+  const configured = hasDetectionMarker(request.detectionPaths);
+
+  for (const command of request.commandCandidates || []) {
+    const executablePath = findExecutable(command);
+    if (executablePath) {
+      return {
+        id: request.id,
+        installed: true,
+        configured,
+        command,
+        path: executablePath
+      };
+    }
+  }
+
+  return {
+    id: request.id,
+    installed: false,
+    configured
+  };
+}
+
+function localAgentWorkingDirectory() {
+  const directory = path.join(app.getPath("userData"), "agent-workspace");
+  fs.mkdirSync(directory, { recursive: true });
+  return directory;
+}
+
+function buildLocalAgentPrompt(input) {
+  const transcript = (input.messages || [])
+    .map((message) => `${message.role === "assistant" ? "圆桌成员" : "用户"}：${message.content}`)
+    .join("\n\n");
+
+  return [
+    "【圆桌角色规则】",
+    input.systemPrompt || "",
+    "",
+    "【圆桌共享上下文】",
+    transcript || "暂无历史消息。",
+    "",
+    "请直接给出本轮回复。不要描述你正在使用哪个 CLI，也不要输出内部思考过程。"
+  ].join("\n");
+}
+
+function getValueAtPath(value, dottedPath) {
+  if (!dottedPath) {
+    return undefined;
+  }
+
+  return dottedPath.split(".").reduce((current, key) => {
+    if (!current || typeof current !== "object") {
+      return undefined;
+    }
+    return current[key];
+  }, value);
+}
+
+function extractTextFromJson(value, preferredPath) {
+  const preferred = getValueAtPath(value, preferredPath);
+  if (typeof preferred === "string" && preferred.trim()) {
+    return preferred.trim();
+  }
+
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+
+  const commonPaths = ["result", "response", "content", "output", "text", "message.content"];
+  for (const candidatePath of commonPaths) {
+    const candidate = getValueAtPath(value, candidatePath);
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => extractTextFromJson(item, preferredPath)).filter(Boolean).join("\n").trim();
+  }
+
+  for (const child of Object.values(value)) {
+    const candidate = extractTextFromJson(child, preferredPath);
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+function parseLocalAgentOutput(stdout, outputFormat, resultPath) {
+  const trimmed = stdout.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  if (outputFormat === "text") {
+    return trimmed;
+  }
+
+  if (outputFormat === "json") {
+    try {
+      return extractTextFromJson(JSON.parse(trimmed), resultPath);
+    } catch {
+      // Some CLIs write progress before the final JSON object.
+    }
+  }
+
+  const lines = trimmed.split(/\r?\n/).filter(Boolean);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    try {
+      const content = extractTextFromJson(JSON.parse(lines[index]), resultPath);
+      if (content) {
+        return content;
+      }
+    } catch {
+      // Ignore non-JSON progress lines.
+    }
+  }
+
+  return trimmed;
+}
+
+function replaceArgumentPlaceholders(value, input, prompt) {
+  return String(value)
+    .replaceAll("{prompt}", prompt)
+    .replaceAll("{systemPrompt}", input.systemPrompt || "")
+    .replaceAll("{model}", input.model || input.provider.defaultModel || "")
+    .replaceAll("{cwd}", localAgentWorkingDirectory());
+}
+
+function buildLocalInvocation(input, prompt, executablePath) {
+  const config = input.provider.localCli;
+  const model = String(input.model || input.provider.defaultModel || "").trim();
+  const agentId = config.agentId;
+
+  if (agentId === "codex") {
+    const outputFile = path.join(os.tmpdir(), `ai-roundtable-codex-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`);
+    return {
+      command: executablePath,
+      args: [
+        "exec",
+        "--sandbox",
+        "read-only",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--color",
+        "never",
+        ...(model ? ["--model", model] : []),
+        "--output-last-message",
+        outputFile,
+        "-"
+      ],
+      stdin: prompt,
+      outputFile
+    };
+  }
+
+  if (agentId === "claude") {
+    return {
+      command: executablePath,
+      args: [
+        "-p",
+        "--output-format",
+        "json",
+        "--permission-mode",
+        "plan",
+        "--tools",
+        "",
+        "--no-session-persistence",
+        ...(model ? ["--model", model] : [])
+      ],
+      stdin: prompt
+    };
+  }
+
+  if (agentId === "gemini") {
+    return {
+      command: executablePath,
+      args: [
+        "--prompt",
+        "",
+        "--output-format",
+        "json",
+        "--approval-mode",
+        "plan",
+        ...(model ? ["--model", model] : [])
+      ],
+      stdin: prompt
+    };
+  }
+
+  if (agentId === "kiro") {
+    return {
+      command: executablePath,
+      args: ["chat", "--no-interactive", "--trust-tools=read,grep", prompt]
+    };
+  }
+
+  if (agentId === "codebuddy") {
+    return {
+      command: executablePath,
+      args: [
+        "-p",
+        "--output-format",
+        "json",
+        "--permission-mode",
+        "plan",
+        "--allowedTools",
+        "Read,Grep"
+      ],
+      stdin: prompt
+    };
+  }
+
+  if (agentId === "hermes") {
+    return {
+      command: executablePath,
+      args: [
+        "--oneshot",
+        prompt,
+        "--toolsets",
+        "vision",
+        "--ignore-rules",
+        ...(model ? ["--model", model] : [])
+      ]
+    };
+  }
+
+  if (agentId === "openclaw") {
+    return {
+      command: executablePath,
+      args: [
+        "infer",
+        "model",
+        "run",
+        "--prompt",
+        prompt,
+        "--thinking",
+        "low",
+        ...(model ? ["--model", model] : []),
+        "--json"
+      ]
+    };
+  }
+
+  const configuredArgs = (config.args || []).map((argument) => replaceArgumentPlaceholders(argument, input, prompt));
+  const hasPromptPlaceholder = (config.args || []).some((argument) => argument.includes("{prompt}"));
+  return {
+    command: executablePath,
+    args: config.inputMode === "argument" && !hasPromptPlaceholder ? [...configuredArgs, prompt] : configuredArgs,
+    stdin: config.inputMode === "stdin" ? prompt : undefined
+  };
+}
+
+function localChildEnvironment(executablePath) {
+  const searchPaths = [
+    path.dirname(executablePath),
+    ...localExecutableSearchPaths()
+  ];
+  const environment = {
+    ...process.env,
+    PATH: Array.from(new Set(searchPaths.filter(Boolean))).join(path.delimiter)
+  };
+
+  if (process.platform === "win32") {
+    environment.Path = environment.PATH;
+  }
+
+  return environment;
+}
+
+function runLocalProcess(invocation, signal) {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const child = spawn(invocation.command, invocation.args, {
+      cwd: localAgentWorkingDirectory(),
+      env: localChildEnvironment(invocation.command),
+      shell: false,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+
+    const finish = (callback) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
+      callback();
+    };
+    const onAbort = () => {
+      child.kill("SIGTERM");
+      finish(() => reject(createAbortError()));
+    };
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      finish(() => reject(createFriendlyError("本地 CLI 响应超时，请检查登录状态或稍后重试。")));
+    }, LOCAL_AGENT_TIMEOUT_MS);
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+      if (Buffer.byteLength(stdout) > MAX_LOCAL_OUTPUT_BYTES) {
+        child.kill("SIGTERM");
+        finish(() => reject(createFriendlyError("本地 CLI 输出过大，已停止本次调用。")));
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+      if (Buffer.byteLength(stderr) > MAX_LOCAL_OUTPUT_BYTES) {
+        stderr = stderr.slice(-MAX_LOCAL_OUTPUT_BYTES);
+      }
+    });
+    child.on("error", (error) => {
+      finish(() => reject(createFriendlyError(`无法启动本地 CLI：${error.message}`)));
+    });
+    child.on("close", (code) => {
+      finish(() => {
+        if (code !== 0) {
+          const detail = stderr.trim() || stdout.trim() || `退出码 ${code}`;
+          reject(createFriendlyError(`本地 CLI 调用失败：${detail.slice(0, 1200)}`, detail));
+          return;
+        }
+        resolve({ stdout, stderr });
+      });
+    });
+
+    if (invocation.stdin !== undefined) {
+      child.stdin.end(invocation.stdin);
+    } else {
+      child.stdin.end();
+    }
+  });
+}
+
+async function callLocalCli(input, signal) {
+  const config = input.provider.localCli;
+  if (!config) {
+    throw createFriendlyError("本地 CLI 配置不完整。");
+  }
+  if (config.capability !== "adapted") {
+    throw createFriendlyError("该本地智能体目前只支持安装检测，尚未开放圆桌对话适配。");
+  }
+
+  const executablePath = (config.commandCandidates || []).map(findExecutable).find(Boolean);
+  if (!executablePath) {
+    throw createFriendlyError(`未检测到 ${config.commandCandidates?.join(" / ") || input.provider.name}，请先安装并完成登录。`);
+  }
+
+  const prompt = buildLocalAgentPrompt(input);
+  const invocation = buildLocalInvocation(input, prompt, executablePath);
+
+  try {
+    const result = await runLocalProcess(invocation, signal);
+    const fileOutput =
+      invocation.outputFile && fs.existsSync(invocation.outputFile)
+        ? fs.readFileSync(invocation.outputFile, "utf8").trim()
+        : "";
+    const content =
+      fileOutput ||
+      parseLocalAgentOutput(
+        result.stdout,
+        config.outputFormat || "text",
+        config.resultPath
+      );
+
+    if (!content) {
+      throw createFriendlyError("本地 CLI 已运行，但没有返回可识别的回复内容。", result.stderr || result.stdout);
+    }
+
+    return {
+      content,
+      raw: {
+        command: executablePath,
+        stderr: result.stderr || undefined
+      }
+    };
+  } finally {
+    if (invocation.outputFile) {
+      try {
+        fs.unlinkSync(invocation.outputFile);
+      } catch {
+        // The CLI may fail before creating the output file.
+      }
+    }
+  }
+}
 
 function trimTrailingSlash(value) {
   return String(value || "").replace(/\/+$/, "");
@@ -341,6 +833,10 @@ async function callAnthropic(input, signal) {
 }
 
 async function callModel(input, signal) {
+  if (input.provider.protocol === "local-cli") {
+    return callLocalCli(input, signal);
+  }
+
   if (input.provider.protocol === "anthropic") {
     return callAnthropic(input, signal);
   }
@@ -400,6 +896,16 @@ ipcMain.handle("model:cancel", (_event, requestId) => {
   pendingRequests.get(requestId)?.abort();
   pendingRequests.delete(requestId);
   return true;
+});
+
+ipcMain.handle("local-agents:detect", (_event, requests) => {
+  if (!Array.isArray(requests)) {
+    return [];
+  }
+
+  return requests
+    .filter((request) => request && typeof request.id === "string" && Array.isArray(request.commandCandidates))
+    .map(detectLocalAgent);
 });
 
 app.whenReady().then(() => {

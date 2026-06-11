@@ -136,6 +136,29 @@ export function buildConnectionTestReport(error: unknown, provider: Pick<Provide
   const suggestions = new Set<string>();
   const searchable = `${friendlyMessage}\n${rawMessage}`.toLowerCase();
 
+  if (provider.protocol === "local-cli") {
+    const nodePathFailure = /env:\s*node|node:\s*no such file/i.test(searchable);
+
+    return [
+      "本地 CLI 测试失败",
+      "",
+      `可能原因：${friendlyMessage}`,
+      rawMessage && rawMessage !== friendlyMessage ? `原始信息：${rawMessage}` : "",
+      "",
+      "建议处理：",
+      "1. 确认 CLI 已安装，并能在普通终端中直接启动。",
+      "2. 先在对应 CLI 中完成官方登录或 API Key 配置。",
+      nodePathFailure
+        ? "3. 这是旧版桌面应用的 Node 路径问题；请安装新版体验版后重新测试。"
+        : "3. 若使用自定义 CLI，可填写完整命令路径；应用会自动补齐常见的 Node 和 CLI 目录。",
+      "4. Kiro Headless 通常需要 KIRO_API_KEY；OpenClaw 需要安装 CLI 并先完成模型认证。",
+      "",
+      `当前配置：${provider.name || "未命名本地 CLI"}`
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   getProviderConfigurationHints(provider).forEach((hint) => suggestions.add(hint));
 
   if (/api key|token|unauthorized|authentication|401|403|无效|权限|区域/.test(searchable)) {

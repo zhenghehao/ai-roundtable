@@ -1,5 +1,6 @@
 import type { AgentRole, AppState, ChatRoom, ProviderTemplate } from "@/lib/types";
 import { defaultLanguageCode } from "@/lib/languages";
+import { createBuiltinLocalProviders } from "@/lib/local-agents";
 import { nowIso } from "@/lib/utils";
 
 export const FILE_MASTER_ROLE_ID = "role-file-master";
@@ -27,7 +28,7 @@ export const providerTemplates: ProviderTemplate[] = [
     name: "Kimi",
     protocol: "openai-compatible",
     baseUrl: "https://api.moonshot.cn/v1",
-    recommendedModels: ["kimi-k2-0711-preview", "moonshot-v1-8k", "moonshot-v1-32k"]
+    recommendedModels: ["kimi-k2.6", "kimi-k2.5", "moonshot-v1-128k", "moonshot-v1-32k", "moonshot-v1-8k"]
   },
   {
     name: "GLM 智谱",
@@ -39,13 +40,13 @@ export const providerTemplates: ProviderTemplate[] = [
     name: "豆包火山方舟",
     protocol: "openai-compatible",
     baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
-    recommendedModels: ["doubao-seed-1.6", "doubao-seed-code"]
+    recommendedModels: ["doubao-seed-1-6-251015", "doubao-seed-1-6-250615", "doubao-seed-code"]
   },
   {
     name: "百度千帆",
     protocol: "openai-compatible",
     baseUrl: "https://qianfan.baidubce.com/v2",
-    recommendedModels: ["ernie-4.0-turbo-8k", "ernie-3.5-8k"]
+    recommendedModels: ["ernie-4.0-turbo-128k", "ernie-4.0-turbo-8k", "ernie-3.5-8k"]
   },
   {
     name: "腾讯混元",
@@ -63,25 +64,25 @@ export const providerTemplates: ProviderTemplate[] = [
     name: "阶跃星辰 StepFun",
     protocol: "openai-compatible",
     baseUrl: "https://api.stepfun.ai/v1",
-    recommendedModels: []
+    recommendedModels: ["step-3.5-flash", "step-3.5-flash-2603"]
   },
   {
     name: "Gemini",
     protocol: "openai-compatible",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
-    recommendedModels: ["gemini-3-flash-preview"]
+    recommendedModels: ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-2.5-pro"]
   },
   {
     name: "Grok xAI",
     protocol: "openai-compatible",
     baseUrl: "https://api.x.ai/v1",
-    recommendedModels: ["grok-4", "grok-4.20-reasoning"]
+    recommendedModels: ["grok-4.3", "grok-4.3-latest", "grok-4", "grok-4.20"]
   },
   {
     name: "Claude",
     protocol: "anthropic",
     baseUrl: "https://api.anthropic.com",
-    recommendedModels: ["claude-opus-4-7", "claude-sonnet-4-5"]
+    recommendedModels: ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"]
   }
 ];
 
@@ -181,13 +182,13 @@ export function createDefaultAppState(): AppState {
   const defaultRoom = createDefaultRoom(roles, createdAt);
 
   return {
-    providers: [],
+    providers: createBuiltinLocalProviders(createdAt),
     roles,
     rooms: [defaultRoom],
     activeRoomId: defaultRoom.id,
     settings: {
       language: defaultLanguageCode
     },
-    version: 1
+    version: 2
   };
 }
