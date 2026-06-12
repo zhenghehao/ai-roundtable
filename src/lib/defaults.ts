@@ -187,7 +187,8 @@ export function createDefaultAppState(): AppState {
     rooms: [defaultRoom],
     activeRoomId: defaultRoom.id,
     settings: {
-      language: defaultLanguageCode
+      language: defaultLanguageCode,
+      theme: "light"
     },
     version: 2
   };

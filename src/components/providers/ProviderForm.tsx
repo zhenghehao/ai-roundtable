@@ -228,7 +228,7 @@ export function ProviderForm({ provider, onSave, onCancel }: ProviderFormProps) 
             </>
           ) : null}
 
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+          <div className="rounded-[10px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
             自定义 CLI 会在本机直接启动。应用不会使用 shell，但该程序本身仍可能读写文件或联网，请只配置你信任的官方或开源 CLI。
           </div>
         </>
@@ -288,7 +288,7 @@ export function ProviderForm({ provider, onSave, onCancel }: ProviderFormProps) 
       </Field>
 
       {draft.protocol !== "local-cli" ? (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+        <div className="rounded-[10px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
           {t("apiKeySafety")}
         </div>
       ) : null}

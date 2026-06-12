@@ -106,22 +106,22 @@ function AttachmentCard({ attachment }: { attachment: ChatAttachment }) {
   const isImage = attachment.kind === "image" && attachment.dataUrl;
 
   return (
-    <div className="rounded-2xl border border-slate-100 bg-white/80 p-2 shadow-sm">
+    <div className="attachment-card rounded-xl border p-2">
       <div className="flex items-center gap-3">
         {isImage ? (
           <img src={attachment.dataUrl} alt={attachment.name} className="h-12 w-12 rounded-xl object-cover" />
         ) : (
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-50 text-indigo-500">
+          <div className="flex h-12 w-12 items-center justify-center rounded-[10px] bg-[var(--accent-soft)] text-[var(--accent)]">
             <FileText className="h-5 w-5" />
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-semibold text-slate-800">{attachment.name}</div>
-          <div className="mt-0.5 text-[11px] text-slate-400">{formatFileSize(attachment.size)}</div>
+          <div className="card-title truncate text-xs font-semibold">{attachment.name}</div>
+          <div className="card-copy mt-0.5 text-[11px]">{formatFileSize(attachment.size)}</div>
         </div>
         {attachment.dataUrl ? (
           <a
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
+            className="button-ghost inline-flex h-8 w-8 items-center justify-center rounded-lg transition"
             href={attachment.dataUrl}
             download={attachment.name}
             title={t("downloadAttachment")}
@@ -132,8 +132,8 @@ function AttachmentCard({ attachment }: { attachment: ChatAttachment }) {
       </div>
       {attachment.extractedText ? (
         <details className="mt-2">
-          <summary className="cursor-pointer text-xs font-medium text-indigo-600">{t("previewAttachment")}</summary>
-          <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600 scrollbar-thin">
+          <summary className="cursor-pointer text-xs font-medium text-[var(--accent)]">{t("previewAttachment")}</summary>
+          <pre className="card-copy mt-2 max-h-44 overflow-auto whitespace-pre-wrap rounded-xl bg-[var(--surface-muted)] p-3 text-xs leading-5 scrollbar-thin">
             {attachment.extractedText}
           </pre>
         </details>
@@ -148,14 +148,14 @@ function GeneratedFileCard({ file }: { file: GeneratedFileBlock }) {
   const { t } = useI18n();
 
   return (
-    <div className="rounded-2xl border border-slate-100 bg-white px-3 py-3 shadow-sm">
+    <div className="generated-card rounded-xl border px-3 py-3">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500">
+        <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-[var(--accent-soft)] text-[var(--accent)]">
           <FileText className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-semibold text-slate-800">{file.name}</div>
-          <div className="mt-0.5 text-[11px] uppercase text-slate-400">{file.type}</div>
+          <div className="card-title truncate text-xs font-semibold">{file.name}</div>
+          <div className="card-copy mt-0.5 text-[11px] uppercase">{file.type}</div>
         </div>
         <Button className="h-8 rounded-lg px-2 text-xs" size="sm" variant="secondary" onClick={() => downloadGeneratedFile(file)}>
           <Download className="h-3.5 w-3.5" />
@@ -164,8 +164,8 @@ function GeneratedFileCard({ file }: { file: GeneratedFileBlock }) {
       </div>
       {file.type === "txt" || file.type === "md" || file.type === "csv" || file.type === "html" ? (
         <details className="mt-2">
-          <summary className="cursor-pointer text-xs font-medium text-indigo-600">{t("previewAttachment")}</summary>
-          <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600 scrollbar-thin">
+          <summary className="cursor-pointer text-xs font-medium text-[var(--accent)]">{t("previewAttachment")}</summary>
+          <pre className="card-copy mt-2 max-h-44 overflow-auto whitespace-pre-wrap rounded-xl bg-[var(--surface-muted)] p-3 text-xs leading-5 scrollbar-thin">
             {file.content}
           </pre>
         </details>
@@ -187,28 +187,28 @@ export function MessageBubble({ message, role, onCopy, onDelete }: MessageBubble
     : contentWithoutFileBlocks;
 
   return (
-    <div className={cn("group flex gap-3 px-4 py-4 md:px-6", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("group flex gap-3 px-4 py-3.5 md:px-6", isUser ? "justify-end" : "justify-start")}>
       {!isUser ? (
-        <RoleAvatar role={role} fallbackName={message.roleName} color={color} size="sm" className="mt-7 shadow-sm" />
+        <RoleAvatar role={role} fallbackName={message.roleName} color={color} size="sm" className="mt-6 shadow-sm" />
       ) : null}
 
-      <div className={cn("max-w-[82%] space-y-1 md:max-w-[72%]", isUser ? "items-end" : "items-start")}>
-        <div className={cn("flex items-center gap-2 text-xs text-slate-400", isUser ? "justify-end" : "justify-start")}>
-          <span className="font-medium text-slate-500">{message.roleName}</span>
+      <div className={cn("max-w-[86%] space-y-1 md:max-w-[76%]", isUser ? "items-end" : "items-start")}>
+        <div className={cn("message-meta flex items-center gap-2 text-xs", isUser ? "justify-end" : "justify-start")}>
+          <span className="message-meta-name font-medium">{message.roleName}</span>
           <span>{formatTime(message.createdAt)}</span>
           {message.status === "pending" ? <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" /> : null}
         </div>
         {displayContent || message.error || message.status === "pending" ? (
           <div
             className={cn(
-              "whitespace-pre-wrap break-words rounded-[22px] px-4 py-3 text-sm leading-7 shadow-sm",
+              "message-bubble whitespace-pre-wrap break-words rounded-[14px] px-4 py-3 text-[14px] leading-7",
               isUser
-                ? "bg-slate-100 text-slate-900"
+                ? "message-bubble-user"
                 : message.status === "error"
                   ? "border border-rose-200 bg-rose-50 text-rose-900"
                   : isSummary
-                    ? "border border-amber-200 bg-amber-50 text-slate-900"
-                    : "border border-slate-100 bg-white text-slate-900"
+                    ? "message-bubble-summary"
+                    : ""
             )}
           >
             {displayContent}
@@ -224,33 +224,33 @@ export function MessageBubble({ message, role, onCopy, onDelete }: MessageBubble
         ) : null}
         {generatedFiles.length > 0 || generatedOutputs.length > 0 ? (
           <div className="grid gap-2">
-            <div className="text-xs font-medium text-slate-400">{t("generatedOutputs")}</div>
+            <div className="card-copy text-xs font-medium">{t("generatedOutputs")}</div>
             {generatedFiles.map((file) => (
               <GeneratedFileCard key={file.id} file={file} />
             ))}
             {generatedOutputs.map((output) =>
               output.kind === "image" ? (
-                <div key={output.id} className="overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-                  <img src={output.url} alt={output.name} className="max-h-72 w-full object-contain bg-slate-50" />
-                  <div className="flex items-center justify-between gap-2 px-3 py-2 text-xs text-slate-500">
+                <div key={output.id} className="generated-card overflow-hidden rounded-xl border">
+                  <img src={output.url} alt={output.name} className="max-h-72 w-full object-contain bg-[var(--surface-muted)]" />
+                  <div className="card-copy flex items-center justify-between gap-2 px-3 py-2 text-xs">
                     <span className="truncate">{output.name}</span>
-                    <a className="inline-flex items-center gap-1 text-indigo-600" href={output.url} target="_blank" rel="noreferrer">
+                    <a className="inline-flex items-center gap-1 text-[var(--accent)]" href={output.url} target="_blank" rel="noreferrer">
                       <ExternalLink className="h-3.5 w-3.5" />
                       {t("viewAttachment")}
                     </a>
                   </div>
                 </div>
               ) : (
-                <div key={output.id} className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-2 shadow-sm">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-indigo-500">
+                <div key={output.id} className="generated-card flex items-center gap-3 rounded-xl border px-3 py-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-[var(--accent-soft)] text-[var(--accent)]">
                     <FileText className="h-5 w-5" />
                   </div>
-                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-800">{output.name}</span>
-                  <a className="inline-flex items-center gap-1 text-xs text-indigo-600" href={output.url} target="_blank" rel="noreferrer">
+                  <span className="card-title min-w-0 flex-1 truncate text-xs font-semibold">{output.name}</span>
+                  <a className="inline-flex items-center gap-1 text-xs text-[var(--accent)]" href={output.url} target="_blank" rel="noreferrer">
                     <ImageIcon className="h-3.5 w-3.5" />
                     {t("viewAttachment")}
                   </a>
-                  <a className="inline-flex items-center gap-1 text-xs text-indigo-600" href={output.url} download={output.name}>
+                  <a className="inline-flex items-center gap-1 text-xs text-[var(--accent)]" href={output.url} download={output.name}>
                     <Download className="h-3.5 w-3.5" />
                     {t("downloadAttachment")}
                   </a>
@@ -270,7 +270,7 @@ export function MessageBubble({ message, role, onCopy, onDelete }: MessageBubble
       </div>
 
       {isUser ? (
-        <div className="mt-7 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white shadow-sm">
+        <div className="mt-6 flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-[var(--accent)] text-[11px] font-semibold text-white shadow-[0_6px_16px_var(--message-user-shadow)]">
           {t("me")}
         </div>
       ) : null}

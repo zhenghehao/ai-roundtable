@@ -119,7 +119,7 @@ export function NewRoomDialog({ open, mode, roles, defaultName, onClose, onCreat
           </Field>
           <Field label={t("defaultRounds")}>
             <select
-              className="h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+              className="field-control h-10 w-full rounded-[10px] border px-3 text-sm outline-none transition focus:ring-[3px]"
               value={rounds}
               onChange={(event) => setRounds(Number(event.target.value))}
             >
@@ -177,14 +177,14 @@ export function NewRoomDialog({ open, mode, roles, defaultName, onClose, onCreat
                       setDraggingRoleId(undefined);
                     }}
                     className={cn(
-                      "flex items-start gap-3 rounded-md border p-3 text-left transition",
-                      checked ? "border-teal-300 bg-teal-50" : "border-gray-200 bg-white hover:bg-gray-50"
+                      "flex items-start gap-3 rounded-[11px] border p-3 text-left transition",
+                      checked ? "border-[var(--accent-border)] bg-[var(--accent-soft)]" : "border-[var(--line)] bg-[var(--surface-strong)] hover:border-[var(--accent-border)] hover:bg-[var(--surface-muted)]"
                     )}
                     onClick={() => toggleRole(role.id)}
                   >
                     {checked && !isPrivate ? (
                       <span
-                        className="mt-1 flex h-7 w-5 cursor-grab items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-slate-700 active:cursor-grabbing"
+                        className="mt-1 flex h-7 w-5 cursor-grab items-center justify-center rounded-md text-[var(--muted)] hover:bg-[var(--surface-strong)] hover:text-[var(--ink)] active:cursor-grabbing"
                         draggable
                         title={t("dragToReorder")}
                         onClick={(event) => event.stopPropagation()}
@@ -204,7 +204,7 @@ export function NewRoomDialog({ open, mode, roles, defaultName, onClose, onCreat
                     <div className="relative">
                       <RoleAvatar role={role} size="sm" />
                       {checked && !isPrivate ? (
-                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-teal-600 px-1 text-[10px] font-semibold text-white">
+                        <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1 text-[10px] font-semibold text-white">
                           {orderIndex + 1}
                         </span>
                       ) : null}
@@ -215,7 +215,7 @@ export function NewRoomDialog({ open, mode, roles, defaultName, onClose, onCreat
                         <span
                           className={cn(
                             "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                            checked ? "border-teal-600 bg-teal-600" : "border-gray-300 bg-white"
+                            checked ? "border-[var(--accent)] bg-[var(--accent)]" : "border-[var(--line-strong)] bg-[var(--surface-strong)]"
                           )}
                         >
                           {checked ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}

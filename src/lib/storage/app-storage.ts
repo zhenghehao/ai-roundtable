@@ -35,6 +35,7 @@ function normalizeState(value: Partial<AppState> | null): AppState {
   const language = languageOptions.some((option) => option.code === value.settings?.language)
     ? value.settings?.language || defaultLanguageCode
     : defaultLanguageCode;
+  const theme = value.settings?.theme === "dark" ? "dark" : "light";
   const savedRoles = Array.isArray(value.roles) && value.roles.length > 0 ? (value.roles as AgentRole[]) : fallback.roles;
   const roleIds = new Set(savedRoles.map((role) => role.id));
   const fileMasterRole = fallback.roles.find((role) => role.id === FILE_MASTER_ROLE_ID);
@@ -59,7 +60,8 @@ function normalizeState(value: Partial<AppState> | null): AppState {
     rooms,
     activeRoomId,
     settings: {
-      language
+      language,
+      theme
     },
     version: 2
   };

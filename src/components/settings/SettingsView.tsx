@@ -18,16 +18,17 @@ export function SettingsView({ language, onLanguageChange, onReset }: SettingsVi
   const currentLanguage = getLanguageOption(language);
 
   return (
-    <div className="app-surface mx-auto flex h-full max-w-6xl flex-col overflow-y-auto rounded-[28px] px-5 py-6 scrollbar-thin md:px-8">
-      <div className="border-b border-slate-100 pb-5">
-        <h2 className="text-xl font-semibold text-gray-950">{t("settings")}</h2>
-        <p className="mt-1 text-sm text-gray-500">{t("settingsDesc")}</p>
+    <div className="app-surface mx-auto flex h-full max-w-6xl flex-col overflow-y-auto rounded-[18px] px-5 py-6 scrollbar-thin md:px-7">
+      <div className="border-b border-[var(--line)] pb-5">
+        <p className="workspace-description mb-1 text-[10px] font-semibold uppercase tracking-[0.18em]">{t("workspace")}</p>
+        <h2 className="workspace-title page-heading text-2xl font-semibold">{t("settings")}</h2>
+        <p className="workspace-description mt-1.5 text-sm">{t("settingsDesc")}</p>
       </div>
 
-      <div className="mt-6 grid gap-4">
-        <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+      <div className="mt-5 grid gap-3">
+        <section className="content-card rounded-[14px] p-5">
           <div className="flex items-start gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[var(--accent-soft)] text-[var(--accent)]">
               <Languages className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
@@ -52,9 +53,9 @@ export function SettingsView({ language, onLanguageChange, onReset }: SettingsVi
           </div>
         </section>
 
-        <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+        <section className="content-card rounded-[14px] p-5">
           <div className="flex items-start gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[var(--accent-soft)] text-[var(--accent)]">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
@@ -66,7 +67,7 @@ export function SettingsView({ language, onLanguageChange, onReset }: SettingsVi
           </div>
         </section>
 
-        <section className="rounded-3xl border border-rose-100 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+        <section className="rounded-[14px] border border-[var(--danger-line)] bg-[var(--danger-surface)] p-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h3 className="font-semibold text-gray-950">{t("resetLocalData")}</h3>

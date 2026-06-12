@@ -10,9 +10,9 @@ interface FieldProps {
 export function Field({ label, hint, children }: FieldProps) {
   return (
     <label className="block space-y-2">
-      <span className="flex items-center justify-between gap-3 text-sm font-medium text-slate-800">
+      <span className="field-label flex items-center justify-between gap-3 text-[13px] font-semibold">
         {label}
-        {hint ? <span className="text-xs font-normal text-slate-500">{hint}</span> : null}
+        {hint ? <span className="field-hint text-xs font-normal">{hint}</span> : null}
       </span>
       {children}
     </label>
@@ -23,7 +23,7 @@ export function TextInput({ className, ...props }: InputHTMLAttributes<HTMLInput
   return (
     <input
       className={cn(
-        "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500",
+        "field-control h-10 w-full rounded-[10px] border px-3 text-sm outline-none transition focus:ring-[3px] disabled:bg-[var(--surface-muted)] disabled:text-[var(--muted)]",
         className
       )}
       {...props}
@@ -35,7 +35,7 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
   return (
     <textarea
       className={cn(
-        "min-h-24 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500",
+        "field-control min-h-24 w-full resize-y rounded-[10px] border px-3 py-2 text-sm leading-6 outline-none transition focus:ring-[3px] disabled:bg-[var(--surface-muted)] disabled:text-[var(--muted)]",
         className
       )}
       {...props}
@@ -47,7 +47,7 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
   return (
     <select
       className={cn(
-        "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 disabled:bg-slate-100 disabled:text-slate-500",
+        "field-control h-10 w-full rounded-[10px] border px-3 text-sm outline-none transition focus:ring-[3px] disabled:bg-[var(--surface-muted)] disabled:text-[var(--muted)]",
         className
       )}
       {...props}

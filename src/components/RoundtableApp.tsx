@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Atom } from "lucide-react";
+import { Circle } from "lucide-react";
 import { ChatView } from "@/components/chat/ChatView";
 import { NewRoomDialog } from "@/components/chat/NewRoomDialog";
 import { HistoryView } from "@/components/history/HistoryView";
@@ -49,7 +49,8 @@ import type {
   ModelMessage,
   ProviderConfig,
   RoomContextMemory,
-  RoomMode
+  RoomMode,
+  ThemeMode
 } from "@/lib/types";
 import { copyText, createId, downloadText, nowIso } from "@/lib/utils";
 
@@ -65,6 +66,8 @@ export function RoundtableApp() {
   const [notice, setNotice] = useState("");
   const [newRoomOpen, setNewRoomOpen] = useState(false);
   const [newRoomMode, setNewRoomMode] = useState<RoomMode>("group");
+  const [isDesktopApp, setIsDesktopApp] = useState(false);
+  const [showOpening, setShowOpening] = useState(true);
   const stateRef = useRef(state);
   const abortRef = useRef<AbortController | null>(null);
   const localAgentSignature = state.providers
@@ -99,7 +102,10 @@ export function RoundtableApp() {
 
   useEffect(() => {
     setState(loadAppState());
+    setIsDesktopApp(Boolean(window.roundtableDesktop));
     setLoaded(true);
+    const timer = window.setTimeout(() => setShowOpening(false), 2800);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -126,13 +132,20 @@ export function RoundtableApp() {
 
   if (!loaded) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#eef1f6] px-6 text-center">
+      <div className="startup-screen flex h-screen items-center justify-center px-6 text-center">
         <div>
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#282b38] text-[#c7fbff] shadow-soft">
-            <Atom className="h-8 w-8" />
+          <img
+            src="./brand/ai-roundtable-logo.png"
+            alt="AI圆桌"
+            className="brand-logo mx-auto h-auto w-[240px] select-none object-contain"
+            draggable={false}
+          />
+          <p className="page-heading mt-7 text-[19px] font-medium tracking-[-0.03em] text-[var(--ink-soft)]">
+            从不同的答案，走向更好的答案
+          </p>
+          <div className="startup-pulse mx-auto mt-8 h-1 w-16 overflow-hidden rounded-full bg-[var(--line)]">
+            <span className="block h-full w-1/2 rounded-full bg-[var(--accent)]" />
           </div>
-          <h1 className="text-xl font-semibold text-gray-950">AI圆桌</h1>
-          <p className="mt-2 text-sm text-gray-500">正在准备本地数据...</p>
         </div>
       </div>
     );
@@ -278,6 +291,16 @@ export function RoundtableApp() {
       }
     }));
     showNotice(t("languageSaved"));
+  };
+
+  const updateTheme = (theme: ThemeMode) => {
+    setState((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        theme
+      }
+    }));
   };
 
   const createRoom = (input: { name: string; mode: RoomMode; roleIds: string[]; defaultRounds: number }) => {
@@ -817,8 +840,38 @@ export function RoundtableApp() {
 
   return (
     <I18nProvider language={state.settings.language}>
-      <div className="min-h-screen overflow-y-auto bg-[#eef1f6] p-2 md:h-screen md:overflow-hidden md:p-4">
-        <div className="flex min-h-screen flex-col rounded-[30px] md:h-full md:min-h-0 md:overflow-hidden md:flex-row">
+      <div className={`app-root theme-${state.settings.theme} flex min-h-screen flex-col overflow-y-auto md:h-screen md:overflow-hidden`}>
+        {showOpening ? (
+          <div className="opening-sequence fixed inset-0 z-50 flex items-center justify-center px-8 text-center">
+            <div className="opening-content">
+              <img
+                src={
+                  state.settings.theme === "dark"
+                    ? "./brand/ai-roundtable-logo-dark.png"
+                    : "./brand/ai-roundtable-logo.png"
+                }
+                alt="AI圆桌"
+                className="opening-logo mx-auto h-auto w-[156px] select-none object-contain"
+                draggable={false}
+              />
+              <p className="opening-slogan mt-8 text-[23px] font-medium tracking-[-0.035em] text-[var(--ink-soft)]">
+                <span>从不同的答案，</span>
+                <span className="opening-slogan-second">走向更好的答案</span>
+              </p>
+              <div className="opening-line mx-auto mt-8 h-px w-32 overflow-hidden bg-[var(--line)]">
+                <span className="block h-full bg-[var(--accent)]" />
+              </div>
+            </div>
+          </div>
+        ) : null}
+        <div className="window-titlebar hidden shrink-0 items-center md:flex" aria-hidden="true">
+          <div className={`window-traffic-lights flex items-center gap-2 ${isDesktopApp ? "invisible" : ""}`}>
+            <Circle className="h-3 w-3 fill-[#ff5f57] text-[#e34b44]" />
+            <Circle className="h-3 w-3 fill-[#febc2e] text-[#e4a521]" />
+            <Circle className="h-3 w-3 fill-[#28c840] text-[#20ad35]" />
+          </div>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col md:overflow-hidden md:flex-row">
           <Sidebar
             state={state}
             activeView={activeView}
@@ -830,9 +883,11 @@ export function RoundtableApp() {
             onRenameRoom={renameRoom}
             onDuplicateRoom={duplicateRoom}
             onDeleteRoom={deleteRoom}
+            theme={state.settings.theme}
+            onThemeChange={updateTheme}
           />
 
-          <section className="relative min-h-[720px] flex-1 p-2 md:min-h-0 md:p-0 md:py-4 md:pr-4">
+          <section className="workspace-canvas relative min-h-[720px] flex-1 p-2.5 md:min-h-0 md:rounded-tl-[22px] md:p-3.5">
             {activeView === "chat" ? (
               <ChatView
                 room={activeRoom}
@@ -896,7 +951,7 @@ export function RoundtableApp() {
             />
 
             {notice ? (
-              <div className="absolute right-6 top-6 z-40 rounded-2xl border border-white bg-white/95 px-4 py-3 text-sm text-slate-800 shadow-soft">
+              <div className="notice-toast absolute right-6 top-6 z-40 rounded-xl px-4 py-3 text-sm shadow-[0_16px_40px_rgba(17,19,24,0.2)]">
                 {notice}
               </div>
             ) : null}

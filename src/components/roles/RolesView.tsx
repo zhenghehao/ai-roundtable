@@ -28,11 +28,12 @@ export function RolesView({ roles, providers, onSave, onDelete }: RolesViewProps
   };
 
   return (
-    <div className="app-surface mx-auto flex h-full max-w-6xl flex-col overflow-y-auto rounded-[28px] px-5 py-6 scrollbar-thin md:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-5">
+    <div className="app-surface mx-auto flex h-full max-w-6xl flex-col overflow-y-auto rounded-[18px] px-5 py-6 scrollbar-thin md:px-7">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-5">
         <div>
-          <h2 className="text-xl font-semibold text-gray-950">{t("rolesTitle")}</h2>
-          <p className="mt-1 text-sm text-gray-500">{t("rolesDesc")}</p>
+          <p className="workspace-description mb-1 text-[10px] font-semibold uppercase tracking-[0.18em]">{t("workspace")}</p>
+          <h2 className="workspace-title page-heading text-2xl font-semibold">{t("rolesTitle")}</h2>
+          <p className="workspace-description mt-1.5 text-sm">{t("rolesDesc")}</p>
         </div>
         <Button
           variant="primary"
@@ -47,41 +48,44 @@ export function RolesView({ roles, providers, onSave, onDelete }: RolesViewProps
       </div>
 
       {roles.length === 0 ? (
-        <div className="mt-10 flex min-h-80 items-center justify-center rounded-lg border border-dashed border-gray-300 bg-white px-6 text-center">
+        <div className="mt-10 flex min-h-80 items-center justify-center rounded-[14px] border border-dashed border-[var(--line-strong)] bg-[var(--surface-strong)] px-6 text-center">
           <div>
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[14px] bg-[var(--accent-soft)] text-[var(--accent)]">
               <Users className="h-6 w-6" />
             </div>
             <h3 className="mt-4 text-base font-semibold text-gray-950">{t("noRolesTitle")}</h3>
           </div>
         </div>
       ) : (
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {roles.map((role) => {
             const provider = providers.find((item) => item.id === role.providerId);
             return (
-              <div key={role.id} className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+              <div key={role.id} className="content-card flex min-h-[250px] flex-col rounded-[14px] p-5 transition hover:-translate-y-0.5 hover:border-[#c8c7c1] hover:shadow-[0_10px_30px_rgba(23,24,30,0.07)]">
                 <div className="flex items-start gap-4">
                   <RoleAvatar role={role} size="md" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="truncate text-base font-semibold text-gray-950">{role.name}</h3>
-                      <span className={role.enabled ? "text-xs text-teal-700" : "text-xs text-gray-400"}>
+                      <h3 className="card-title truncate text-base font-semibold">{role.name}</h3>
+                      <span className={role.enabled ? "inline-flex items-center gap-1 text-[10px] text-emerald-700" : "inline-flex items-center gap-1 text-[10px] text-gray-400"}>
+                        <span className={role.enabled ? "h-1.5 w-1.5 rounded-full bg-emerald-500" : "h-1.5 w-1.5 rounded-full bg-gray-300"} />
                         {role.enabled ? t("enabled") : t("disabled")}
                       </span>
                     </div>
                     {role.identityFileContent ? (
-                      <p className="mt-2 inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">
+                      <p className="mt-2 inline-flex rounded-[7px] bg-[var(--accent-soft)] px-2 py-1 text-[11px] font-medium text-[var(--accent-strong)]">
                         {t("identityFileLoaded", { name: role.identityFileName || t("identityFile") })}
                       </p>
                     ) : null}
-                    <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-600">{role.systemPrompt}</p>
-                    <p className="mt-3 text-sm text-gray-500">{t("provider")}：{provider?.name || t("unspecified")}</p>
-                    <p className="mt-1 text-sm text-gray-500">{t("model")}：{role.model || provider?.defaultModel || t("useProviderDefault")}</p>
-                    <p className="mt-3 text-xs text-gray-400">{t("updatedAt", { time: formatDateTime(role.updatedAt) })}</p>
+                    <p className="card-copy mt-3 line-clamp-3 text-sm leading-6">{role.systemPrompt}</p>
+                    <div className="card-copy mt-4 border-t border-[var(--line-soft)] pt-3 text-xs leading-5">
+                      <p>{t("provider")}：{provider?.name || t("unspecified")}</p>
+                      <p>{t("model")}：{role.model || provider?.defaultModel || t("useProviderDefault")}</p>
+                    </div>
+                    <p className="card-copy mt-2 text-[10px]">{t("updatedAt", { time: formatDateTime(role.updatedAt) })}</p>
                   </div>
                 </div>
-                <div className="mt-4 flex justify-end gap-2">
+                <div className="mt-auto flex justify-end gap-2 pt-4">
                   <Button
                     size="icon"
                     title={t("edit")}

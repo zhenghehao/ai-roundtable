@@ -2,23 +2,18 @@
 
 import {
   ArrowUp,
-  Bot,
   Check,
-  CheckCircle2,
+  ChevronDown,
   FileUp,
-  Layers3,
-  MessageCircle,
   Paperclip,
   Pencil,
-  Play,
   RotateCcw,
   Sparkles,
   Square,
   Trash2,
-  Users,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
 import { Button } from "@/components/ui/Button";
@@ -47,15 +42,6 @@ interface ChatViewProps {
   onClear: () => void;
   onCopyMessage: (message: ChatMessage) => void;
   onDeleteMessage: (messageId: string) => void;
-}
-
-function ContextCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="rounded-3xl border border-slate-100 bg-slate-50/70 p-4">
-      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-      <div className="mt-3">{children}</div>
-    </section>
-  );
 }
 
 export function ChatView({
@@ -92,7 +78,6 @@ export function ChatView({
   );
   const enabledSelectedRoles = selectedRoles.filter((role) => role.enabled);
   const speakingRole = roles.find((role) => role.id === speakingRoleId);
-  const visibleProviders = useMemo(() => providers.slice(0, 4), [providers]);
   const mentionCandidates = useMemo(() => {
     if (mentionQuery === undefined) {
       return [];
@@ -239,20 +224,17 @@ export function ChatView({
   };
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
-      <section className="app-surface flex min-h-0 flex-col overflow-hidden rounded-[28px]">
-        <header className="border-b border-slate-100 px-5 py-5 md:px-7">
+    <div className="h-full min-h-0">
+      <section className="chat-surface app-surface flex h-full min-h-0 flex-col overflow-hidden rounded-[21px]">
+        <header className="chat-header border-b px-5 py-[18px] md:px-7">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-600">
-                  <MessageCircle className="h-4 w-4" />
-                </div>
                 {editingRoomName ? (
                   <div className="flex min-w-0 items-center gap-2">
                     <input
                       autoFocus
-                      className="h-10 min-w-0 max-w-xl flex-1 rounded-xl border border-indigo-300 bg-white px-3 text-lg font-semibold text-slate-950 outline-none ring-4 ring-indigo-100"
+                      className="room-name-input h-10 min-w-0 max-w-xl flex-1 rounded-[10px] border px-3 text-lg font-semibold outline-none ring-[3px]"
                       value={roomNameDraft}
                       onChange={(event) => setRoomNameDraft(event.target.value)}
                       onBlur={saveRoomName}
@@ -273,7 +255,7 @@ export function ChatView({
                   </div>
                 ) : (
                   <div className="flex min-w-0 items-center gap-1.5">
-                    <h2 className="truncate text-xl font-semibold tracking-[-0.01em] text-slate-950">{room.name}</h2>
+                    <h2 className="page-heading truncate text-[22px] font-semibold text-[var(--ink)]">{room.name}</h2>
                     <Button
                       className="h-8 w-8 shrink-0 rounded-lg"
                       size="icon"
@@ -287,38 +269,49 @@ export function ChatView({
                   </div>
                 )}
               </div>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-                <span className="rounded-full bg-slate-100 px-2.5 py-1">
+              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--muted)]">
+                <span>
                   {enabledSelectedRoles.length > 0 ? t("enabledRoleCount", { count: enabledSelectedRoles.length }) : t("noSpeakingRoles")}
                 </span>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1">
+                <span className="text-[var(--line-strong)]">/</span>
+                <span>
                   {t(room.mode === "private" ? "privateChatBadge" : "groupChatBadge")}
                 </span>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1">{t("roundUnit", { count: room.defaultRounds })}</span>
-                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">{t("localSave")}</span>
+                <span className="text-[var(--line-strong)]">/</span>
+                <span>{t("roundUnit", { count: room.defaultRounds })}</span>
+                <span className="inline-flex items-center gap-1 text-emerald-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  {t("localSave")}
+                </span>
                 {speakingRole ? (
-                  <span className="rounded-full bg-indigo-50 px-2.5 py-1 text-indigo-700">{t("roleSpeaking", { name: speakingRole.name }).replace(/^[，,]\s?/, "")}</span>
+                  <span className="inline-flex items-center gap-1 font-medium text-[var(--accent)]">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent)]" />
+                    {t("roleSpeaking", { name: speakingRole.name }).replace(/^[，,]\s?/, "")}
+                  </span>
                 ) : null}
               </div>
             </div>
-            <label className="flex items-center gap-2 text-sm text-slate-500">
+            <label className="mr-3 flex items-center gap-2 text-xs font-medium text-[var(--muted)] md:mr-5">
               {t("discussionRounds")}
-              <select
-                className="h-10 rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
-                value={room.defaultRounds}
-                onChange={(event) => setRounds(Number(event.target.value))}
-                disabled={isRunning}
-              >
-                {Array.from({ length: 10 }, (_, index) => index + 1).map((round) => (
-                  <option key={round} value={round}>
-                    {t("roundUnit", { count: round })}
-                  </option>
-                ))}
-              </select>
+              <span className="relative">
+                <select
+                  className="round-select h-9 appearance-none rounded-[9px] border py-0 pl-2.5 pr-7 text-sm outline-none transition focus:ring-2"
+                  value={room.defaultRounds}
+                  onChange={(event) => setRounds(Number(event.target.value))}
+                  disabled={isRunning}
+                >
+                  {Array.from({ length: 10 }, (_, index) => index + 1).map((round) => (
+                    <option key={round} value={round}>
+                      {t("roundUnit", { count: round })}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--muted)]" />
+              </span>
             </label>
           </div>
 
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+          <div className="mt-5 flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
             {roles.length === 0 ? (
               <span className="text-sm text-slate-500">{t("noRolesCreateFirst")}</span>
             ) : (
@@ -329,8 +322,8 @@ export function ChatView({
                   <button
                     key={role.id}
                     className={cn(
-                      "flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-sm transition",
-                      checked ? "border-indigo-100 bg-indigo-50 text-indigo-900" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                      "flex h-8 shrink-0 items-center gap-2 rounded-[10px] border px-2.5 text-xs font-medium transition duration-200",
+                      checked ? "role-chip-selected" : "role-chip-idle",
                       !role.enabled ? "opacity-50" : ""
                     )}
                     onClick={() => toggleRole(role.id)}
@@ -339,7 +332,7 @@ export function ChatView({
                   >
                     <RoleAvatar role={role} size="xs" />
                     {checked && room.mode !== "private" ? (
-                      <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-700">
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-[5px] bg-[var(--accent)] px-1 text-[9px] font-semibold text-white">
                         {orderIndex + 1}
                       </span>
                     ) : null}
@@ -351,24 +344,22 @@ export function ChatView({
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto bg-white scrollbar-thin">
+        <main className="chat-stage subtle-grid min-h-0 flex-1 overflow-y-auto scrollbar-thin">
           {providers.length === 0 ? (
-            <div className="mx-auto mt-5 max-w-4xl rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="mx-auto mt-5 max-w-4xl rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               {t("noProviderNotice")}
             </div>
           ) : null}
           {room.messages.length === 0 ? (
             <div className="flex min-h-full items-center justify-center px-6 text-center">
-              <div>
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-slate-50 text-indigo-600 shadow-sm">
-                  <Bot className="h-8 w-8" />
-                </div>
-                <h3 className="mt-4 text-base font-semibold text-slate-950">{t("emptyChatTitle")}</h3>
-                <p className="mt-2 text-sm text-slate-500">{t("emptyChatDesc")}</p>
+              <div className="empty-state max-w-lg">
+                <p className="empty-slogan page-heading text-[17px] font-normal tracking-[-0.02em]">
+                  从不同的答案，走向更好的答案
+                </p>
               </div>
             </div>
           ) : (
-            <div className="mx-auto max-w-5xl py-4">
+            <div className="mx-auto max-w-4xl py-5">
               {room.messages.map((message) => (
                 <MessageBubble
                   key={message.id}
@@ -383,11 +374,11 @@ export function ChatView({
           <div ref={messageEndRef} />
         </main>
 
-        <footer className="border-t border-slate-100 bg-white px-5 py-5 md:px-7">
-          <div className="rounded-[22px] border border-slate-200 bg-white p-3 shadow-[0_16px_44px_rgba(15,23,42,0.07)]">
+        <footer className="composer-shell border-t px-4 py-4 md:px-6 md:py-5">
+          <div className="composer rounded-[17px] border p-3 focus-within:ring-[3px]">
             <textarea
               ref={textareaRef}
-              className="min-h-20 w-full resize-none rounded-2xl border-0 bg-transparent px-2 py-2 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400 disabled:bg-slate-50"
+              className="min-h-20 w-full resize-none rounded-[10px] border-0 bg-transparent px-2.5 py-2 text-[14px] leading-6 text-[var(--ink)] outline-none placeholder:text-[var(--placeholder)] disabled:bg-[var(--canvas)]"
               value={topic}
               onChange={(event) => {
                 setTopic(event.target.value);
@@ -405,7 +396,7 @@ export function ChatView({
               }}
             />
             {mentionQuery !== undefined ? (
-              <div className="mb-2 max-h-44 overflow-y-auto rounded-2xl border border-slate-100 bg-slate-50 p-2 scrollbar-thin">
+              <div className="mb-2 max-h-44 overflow-y-auto rounded-xl border border-[var(--line)] bg-[var(--surface-muted)] p-2 scrollbar-thin">
                 {mentionCandidates.length === 0 ? (
                   <div className="px-3 py-2 text-xs text-slate-400">{t("mentionNoRoles")}</div>
                 ) : (
@@ -414,7 +405,7 @@ export function ChatView({
                       <button
                         key={role.id}
                         type="button"
-                        className="flex items-center gap-2 rounded-full border border-white bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm transition hover:border-indigo-100 hover:bg-indigo-50 hover:text-indigo-900"
+                        className="flex items-center gap-2 rounded-[9px] border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-1.5 text-sm text-[var(--muted)] transition hover:border-[var(--accent-border)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent-strong)]"
                         onClick={() => insertMention(role)}
                       >
                         <RoleAvatar role={role} size="xs" />
@@ -428,17 +419,17 @@ export function ChatView({
             {pendingAttachments.length > 0 ? (
               <div className="mb-2 grid gap-2 px-1 sm:grid-cols-2">
                 {pendingAttachments.map((attachment) => (
-                  <div key={attachment.id} className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+                  <div key={attachment.id} className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2">
                     {attachment.kind === "image" && attachment.dataUrl ? (
                       <img src={attachment.dataUrl} alt={attachment.name} className="h-10 w-10 rounded-xl object-cover" />
                     ) : (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-indigo-500">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-[var(--surface-strong)] text-[var(--accent)]">
                         <FileUp className="h-5 w-5" />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-semibold text-slate-800">{attachment.name}</div>
-                      <div className="mt-0.5 text-[11px] text-slate-400">
+                      <div className="card-title truncate text-xs font-semibold">{attachment.name}</div>
+                      <div className="card-copy mt-0.5 text-[11px]">
                         {formatFileSize(attachment.size)}
                         {attachment.extractedText ? ` · ${t("contentReadable")}` : ""}
                       </div>
@@ -450,7 +441,7 @@ export function ChatView({
                 ))}
               </div>
             ) : null}
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line-soft)] pt-2.5">
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   ref={fileInputRef}
@@ -461,6 +452,7 @@ export function ChatView({
                   onChange={(event) => void handleFiles(event.target.files)}
                 />
                 <Button
+                  size="sm"
                   variant="secondary"
                   title={t("uploadAttachment")}
                   disabled={isRunning}
@@ -469,113 +461,43 @@ export function ChatView({
                   <Paperclip className="h-4 w-4" />
                   {t("uploadAttachment")}
                 </Button>
-                <Button variant="secondary" onClick={() => onContinue(1)} disabled={isRunning || room.messages.length === 0}>
-                  <RotateCcw className="h-4 w-4" />
-                  {t("continueRound")}
-                </Button>
-                <Button variant="secondary" onClick={onSummarize} disabled={isRunning || room.messages.length === 0}>
-                  <Sparkles className="h-4 w-4" />
-                  {t("generateSummary")}
-                </Button>
-                <Button variant="secondary" onClick={onClear} disabled={isRunning || room.messages.length === 0}>
-                  <Trash2 className="h-4 w-4" />
-                  {t("clear")}
-                </Button>
+                {room.messages.length > 0 ? (
+                  <>
+                    <Button size="sm" variant="secondary" onClick={() => onContinue(1)} disabled={isRunning}>
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      {t("continueRound")}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={onSummarize} disabled={isRunning}>
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {t("generateSummary")}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={onClear} disabled={isRunning}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {t("clear")}
+                    </Button>
+                  </>
+                ) : null}
               </div>
               <div className="flex items-center gap-2">
                 {isRunning ? (
-                  <Button variant="danger" onClick={onStop}>
+                  <Button size="sm" variant="danger" onClick={onStop}>
                     <Square className="h-4 w-4" />
                     {t("stop")}
                   </Button>
                 ) : (
-                  <Button variant="primary" onClick={startDiscussion} disabled={isRunning}>
-                    <Play className="h-4 w-4" />
+                  <Button size="sm" variant="primary" onClick={startDiscussion} disabled={isRunning}>
                     {t("startDiscussion")}
-                    <ArrowUp className="h-4 w-4" />
+                    <ArrowUp className="h-3.5 w-3.5" />
                   </Button>
                 )}
               </div>
             </div>
+            <div className="brand-microcopy mt-3 text-center text-[10px] tracking-[0.08em]">
+              从不同的答案，走向更好的答案
+            </div>
           </div>
         </footer>
       </section>
-
-      <aside className="app-surface hidden min-h-0 flex-col overflow-hidden rounded-[28px] lg:flex">
-        <div className="border-b border-slate-100 px-5 py-5">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold tracking-[-0.01em] text-slate-950">{t("roundtableContext")}</h2>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-500">
-              {t("messagesCountShort", { count: room.messages.length })}
-            </span>
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 scrollbar-thin">
-          <ContextCard title={t("activeRoles")}>
-            {selectedRoles.length === 0 ? (
-              <p className="text-sm text-slate-500">{t("noParticipantsContext")}</p>
-            ) : (
-              <div className="space-y-2">
-                {selectedRoles.map((role) => (
-                  <div key={role.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <RoleAvatar role={role} size="xs" />
-                      <span className="truncate text-sm font-medium text-slate-800">{role.name}</span>
-                    </div>
-                    <span className={cn("rounded-full px-2 py-0.5 text-[11px]", role.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400")}>
-                      {role.enabled ? t("enabled") : t("disabled")}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </ContextCard>
-
-          <ContextCard title={t("providerConfigs")}>
-            {visibleProviders.length === 0 ? (
-              <p className="text-sm text-slate-500">{t("noProvidersContext")}</p>
-            ) : (
-              <div className="space-y-2">
-                {visibleProviders.map((provider) => {
-                  const ready = Boolean(provider.baseUrl && provider.apiKey);
-                  return (
-                    <div key={provider.id} className="rounded-2xl bg-white px-3 py-2.5">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="truncate text-sm font-medium text-slate-800">{provider.name}</span>
-                        <span className={cn("rounded-full px-2 py-0.5 text-[11px]", ready ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")}>
-                          {ready ? t("available") : t("unavailable")}
-                        </span>
-                      </div>
-                      <p className="mt-1 truncate text-xs text-slate-400">{provider.defaultModel || t("useProviderDefault")}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </ContextCard>
-
-          <ContextCard title={t("defaultRounds")}>
-            <div className="space-y-2 text-sm text-slate-600">
-              <div className="flex items-center justify-between rounded-2xl bg-white px-3 py-2">
-                <span className="flex items-center gap-2">
-                  <Layers3 className="h-4 w-4 text-indigo-500" />
-                  {t("discussionRounds")}
-                </span>
-                <span className="font-semibold text-slate-900">{t("roundUnit", { count: room.defaultRounds })}</span>
-              </div>
-              <div className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                {t("speakingOrder")}
-              </div>
-              <div className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2">
-                <Users className="h-4 w-4 text-indigo-500" />
-                {t("enabledRoleCount", { count: enabledSelectedRoles.length })}
-              </div>
-            </div>
-          </ContextCard>
-        </div>
-      </aside>
     </div>
   );
 }

@@ -249,7 +249,7 @@ export function RoleForm({ role, providers, onSave, onCancel }: RoleFormProps) {
           <div className="space-y-3">
             <button
               type="button"
-              className="flex h-32 w-32 items-center justify-center overflow-hidden rounded-md border border-dashed border-gray-300 bg-gray-50 text-gray-400 transition hover:border-teal-300 hover:bg-teal-50"
+              className="flex h-32 w-32 items-center justify-center overflow-hidden rounded-[14px] border border-dashed border-[#cccac3] bg-[#f5f4f0] text-gray-400 transition hover:border-[#a9a9e8] hover:bg-[#eeeeff]"
               onClick={() => fileInputRef.current?.click()}
               title={t("chooseLocalAvatar")}
             >
@@ -311,7 +311,7 @@ export function RoleForm({ role, providers, onSave, onCancel }: RoleFormProps) {
             onChange={(event) => void handleIdentityFile(event.target.files?.[0])}
           />
           {draft.identityFileContent ? (
-            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3">
+            <div className="rounded-xl border border-[#d7d7f5] bg-[#f0f0ff] p-3">
               <div className="flex items-start gap-2 text-xs text-indigo-900">
                 <FileText className="mt-0.5 h-4 w-4 shrink-0" />
                 <div>
@@ -385,7 +385,7 @@ export function RoleForm({ role, providers, onSave, onCancel }: RoleFormProps) {
           type="checkbox"
           checked={draft.enabled}
           onChange={(event) => setDraft((current) => ({ ...current, enabled: event.target.checked }))}
-          className="h-4 w-4 accent-teal-600"
+          className="h-4 w-4 accent-[#5b5bd6]"
         />
         {t("enableRole")}
       </label>

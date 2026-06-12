@@ -20,19 +20,19 @@ export function Modal({ title, description, open, onClose, children, footer }: M
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 px-4 py-6 backdrop-blur-sm">
-      <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] bg-white shadow-soft">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#111318]/55 px-4 py-6 backdrop-blur-[3px]">
+      <div className="modal-panel flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-[18px] border shadow-[0_28px_90px_rgba(17,19,24,0.32)]">
+        <div className="modal-divider flex items-start justify-between gap-4 border-b px-6 py-5">
           <div>
-            <h2 className="text-base font-semibold text-slate-950">{title}</h2>
-            {description ? <p className="mt-1 text-sm text-slate-500">{description}</p> : null}
+            <h2 className="workspace-title page-heading text-lg font-semibold">{title}</h2>
+            {description ? <p className="workspace-description mt-1 text-sm">{description}</p> : null}
           </div>
           <Button type="button" variant="ghost" size="icon" onClick={onClose} title={t("close")}>
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <div className="overflow-y-auto px-5 py-4 scrollbar-thin">{children}</div>
-        {footer ? <div className="flex justify-end gap-2 border-t border-slate-100 px-5 py-4">{footer}</div> : null}
+        <div className="overflow-y-auto px-6 py-5 scrollbar-thin">{children}</div>
+        {footer ? <div className="modal-divider flex justify-end gap-2 border-t px-6 py-4">{footer}</div> : null}
       </div>
     </div>
   );

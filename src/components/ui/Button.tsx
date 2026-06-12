@@ -12,12 +12,12 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClass: Record<ButtonVariant, string> = {
   primary:
-    "bg-gradient-to-br from-[#7c5cff] to-[#5b7cfa] text-white shadow-[0_10px_24px_rgba(91,124,250,0.22)] hover:brightness-105 disabled:from-slate-300 disabled:to-slate-300 disabled:shadow-none",
+    "button-primary border disabled:border-[var(--line)] disabled:bg-[var(--line-strong)] disabled:shadow-none",
   secondary:
-    "border border-slate-200/80 bg-white text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:border-slate-300 hover:bg-slate-50 disabled:text-slate-400 disabled:shadow-none",
-  ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-950 disabled:text-slate-400",
+    "button-secondary border shadow-[0_1px_2px_rgba(23,24,30,0.03)] disabled:text-[var(--placeholder)] disabled:shadow-none",
+  ghost: "button-ghost disabled:text-[var(--placeholder)]",
   danger:
-    "bg-rose-600 text-white shadow-[0_10px_24px_rgba(225,29,72,0.16)] hover:bg-rose-700 disabled:bg-rose-300 disabled:shadow-none"
+    "border border-rose-700 bg-rose-600 text-white shadow-[0_5px_14px_rgba(225,29,72,0.14)] hover:bg-rose-700 disabled:border-rose-300 disabled:bg-rose-300 disabled:shadow-none"
 };
 
 const sizeClass: Record<ButtonSize, string> = {
@@ -30,7 +30,7 @@ export function Button({ className, variant = "secondary", size = "md", children
   return (
     <button
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-xl font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed",
+        "inline-flex shrink-0 items-center justify-center rounded-[10px] font-medium transition duration-150 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-[var(--surface)] disabled:cursor-not-allowed",
         variantClass[variant],
         sizeClass[size],
         className

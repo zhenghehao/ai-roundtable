@@ -31,8 +31,11 @@ export type LanguageCode =
   | "it"
   | "nl";
 
+export type ThemeMode = "light" | "dark";
+
 export interface AppSettings {
   language: LanguageCode;
+  theme: ThemeMode;
 }
 
 export interface ProviderConfig {

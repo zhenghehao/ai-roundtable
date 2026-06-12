@@ -850,8 +850,14 @@ function createWindow() {
     height: 820,
     minWidth: 1080,
     minHeight: 680,
-    title: "AI圆桌",
-    backgroundColor: "#f6f7f9",
+    title: "",
+    backgroundColor: "#f3f6f5",
+    ...(process.platform === "darwin"
+      ? {
+          titleBarStyle: "hiddenInset",
+          trafficLightPosition: { x: 16, y: 15 }
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,

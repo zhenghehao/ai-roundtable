@@ -32,11 +32,12 @@ export function HistoryView({ room, onExportJson, onExportMarkdown, onExportText
   };
 
   return (
-    <div className="app-surface mx-auto flex h-full max-w-6xl flex-col rounded-[28px] px-5 py-6 md:px-8">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-5">
+    <div className="app-surface mx-auto flex h-full max-w-6xl flex-col rounded-[18px] px-5 py-6 md:px-7">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-5">
         <div>
-          <h2 className="text-xl font-semibold text-gray-950">{t("historyTitle")}</h2>
-          <p className="mt-1 text-sm text-gray-500">{t("currentRoom", { name: room.name })}</p>
+          <p className="workspace-description mb-1 text-[10px] font-semibold uppercase tracking-[0.18em]">{t("workspace")}</p>
+          <h2 className="workspace-title page-heading text-2xl font-semibold">{t("historyTitle")}</h2>
+          <p className="workspace-description mt-1.5 text-sm">{t("currentRoom", { name: room.name })}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={onExportJson} disabled={room.messages.length === 0}>
@@ -65,28 +66,28 @@ export function HistoryView({ room, onExportJson, onExportMarkdown, onExportText
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-          <div className="text-sm text-gray-500">{t("messageCount")}</div>
-          <div className="mt-2 text-2xl font-semibold text-gray-950">{room.messages.length}</div>
+      <div className="mt-5 grid gap-3 md:grid-cols-3">
+        <div className="content-card rounded-[14px] p-4">
+          <div className="card-copy text-xs font-medium">{t("messageCount")}</div>
+          <div className="card-title mt-2 text-3xl font-semibold tracking-[-0.04em]">{room.messages.length}</div>
         </div>
-        <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-          <div className="text-sm text-gray-500">{t("createdAt")}</div>
-          <div className="mt-2 text-lg font-semibold text-gray-950">{formatDateTime(room.createdAt)}</div>
+        <div className="content-card rounded-[14px] p-4">
+          <div className="card-copy text-xs font-medium">{t("createdAt")}</div>
+          <div className="card-title mt-2 text-base font-semibold">{formatDateTime(room.createdAt)}</div>
         </div>
-        <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-          <div className="text-sm text-gray-500">{t("updatedAt", { time: "" }).trim()}</div>
-          <div className="mt-2 text-lg font-semibold text-gray-950">{formatDateTime(room.updatedAt)}</div>
+        <div className="content-card rounded-[14px] p-4">
+          <div className="card-copy text-xs font-medium">{t("updatedAt", { time: "" }).trim()}</div>
+          <div className="card-title mt-2 text-base font-semibold">{formatDateTime(room.updatedAt)}</div>
         </div>
       </div>
 
-      <div className="mt-6 min-h-0 flex-1 overflow-y-auto rounded-3xl border border-slate-100 bg-white scrollbar-thin">
+      <div className="history-list mt-4 min-h-0 flex-1 overflow-y-auto rounded-[14px] border scrollbar-thin">
         {room.messages.length === 0 ? (
           <div className="flex min-h-72 items-center justify-center px-6 text-center text-sm text-gray-500">
             {t("noHistory")}
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-[var(--line-soft)]">
             {room.messages.map((message) => (
               <div key={message.id} className="px-5 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -100,7 +101,7 @@ export function HistoryView({ room, onExportJson, onExportMarkdown, onExportText
         )}
       </div>
 
-      <div className="mt-4 flex items-start gap-3 rounded-md border border-teal-100 bg-teal-50 px-4 py-3 text-sm leading-6 text-teal-900">
+      <div className="mt-4 flex items-start gap-3 rounded-[10px] border border-[var(--accent-border)] bg-[var(--accent-soft)] px-4 py-3 text-sm leading-6 text-[var(--accent-strong)]">
         <Download className="mt-0.5 h-4 w-4 shrink-0" />
         {t("exportHint")}
       </div>
