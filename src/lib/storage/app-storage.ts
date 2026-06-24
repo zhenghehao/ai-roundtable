@@ -36,6 +36,16 @@ function normalizeState(value: Partial<AppState> | null): AppState {
     ? value.settings?.language || defaultLanguageCode
     : defaultLanguageCode;
   const theme = value.settings?.theme === "dark" ? "dark" : "light";
+  const knowledgeBase = {
+    ...fallback.settings.knowledgeBase,
+    ...(value.settings?.knowledgeBase || {}),
+    kind: "obsidian" as const,
+    maxNotes: Math.min(12, Math.max(1, Number(value.settings?.knowledgeBase?.maxNotes || fallback.settings.knowledgeBase.maxNotes))),
+    maxCharsPerNote: Math.min(
+      8000,
+      Math.max(600, Number(value.settings?.knowledgeBase?.maxCharsPerNote || fallback.settings.knowledgeBase.maxCharsPerNote))
+    )
+  };
   const savedRoles = Array.isArray(value.roles) && value.roles.length > 0 ? (value.roles as AgentRole[]) : fallback.roles;
   const roleIds = new Set(savedRoles.map((role) => role.id));
   const fileMasterRole = fallback.roles.find((role) => role.id === FILE_MASTER_ROLE_ID);
@@ -44,15 +54,15 @@ function normalizeState(value: Partial<AppState> | null): AppState {
   const savedProviders = Array.isArray(value.providers)
     ? value.providers.map(normalizeKnownProviderEndpoint).map(refreshBuiltinLocalProvider)
     : [];
-  const providers =
-    Number(value.version || 1) < 2
-      ? [
-          ...savedProviders,
-          ...createBuiltinLocalProviders().filter(
-            (builtin) => !savedProviders.some((provider) => provider.id === builtin.id)
-          )
-        ]
-      : savedProviders;
+  const savedVersion = Number(value.version || 1);
+  const newLocalModelProviderIds = new Set(["local-ollama", "local-lmstudio"]);
+  const missingBuiltinProviders = createBuiltinLocalProviders().filter((builtin) => {
+    if (savedProviders.some((provider) => provider.id === builtin.id)) {
+      return false;
+    }
+    return savedVersion < 2 || (savedVersion < 3 && newLocalModelProviderIds.has(builtin.id));
+  });
+  const providers = [...savedProviders, ...missingBuiltinProviders];
 
   return {
     providers: providers.length > 0 ? providers : fallback.providers,
@@ -61,9 +71,10 @@ function normalizeState(value: Partial<AppState> | null): AppState {
     activeRoomId,
     settings: {
       language,
-      theme
+      theme,
+      knowledgeBase
     },
-    version: 2
+    version: 3
   };
 }
 

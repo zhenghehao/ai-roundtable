@@ -72,6 +72,16 @@ export function ProviderForm({ provider, onSave, onCancel }: ProviderFormProps) 
               outputFormat: "text",
               capability: "adapted"
             }
+          : protocol === "ollama"
+            ? current.localCli || {
+                agentId: "ollama",
+                commandCandidates: ["ollama"],
+                detectionPaths: ["~/.ollama"],
+                args: [],
+                inputMode: "stdin",
+                outputFormat: "text",
+                capability: "adapted"
+              }
           : current.localCli
     }));
   };
@@ -104,7 +114,7 @@ export function ProviderForm({ provider, onSave, onCancel }: ProviderFormProps) 
 
   return (
     <div className="space-y-4">
-      {draft.protocol !== "local-cli" ? (
+      {draft.protocol !== "local-cli" && draft.protocol !== "ollama" ? (
         <Field label={t("providerTemplate")} hint={t("optional")}>
           <Select defaultValue="" onChange={(event) => applyTemplate(event.target.value)}>
             <option value="">{t("manualConfig")}</option>
@@ -134,6 +144,7 @@ export function ProviderForm({ provider, onSave, onCancel }: ProviderFormProps) 
             <option value="openai-compatible">{t("protocolOpenAI")}</option>
             <option value="anthropic">{t("protocolAnthropic")}</option>
             <option value="local-cli">本地 CLI</option>
+            <option value="ollama">Ollama 本地模型</option>
           </Select>
         </Field>
       </div>
@@ -232,6 +243,26 @@ export function ProviderForm({ provider, onSave, onCancel }: ProviderFormProps) 
             自定义 CLI 会在本机直接启动。应用不会使用 shell，但该程序本身仍可能读写文件或联网，请只配置你信任的官方或开源 CLI。
           </div>
         </>
+      ) : draft.protocol === "ollama" ? (
+        <>
+          <Field label="Ollama 地址" hint="默认 http://127.0.0.1:11434">
+            <TextInput
+              value={draft.baseUrl}
+              placeholder="http://127.0.0.1:11434"
+              onChange={(event) => setDraft((current) => ({ ...current, baseUrl: event.target.value }))}
+            />
+          </Field>
+          <Field label={t("defaultModel")} hint="可从模型配置页的本地模型列表中选择">
+            <TextInput
+              value={draft.defaultModel}
+              placeholder="llama3.2:latest"
+              onChange={(event) => setDraft((current) => ({ ...current, defaultModel: event.target.value }))}
+            />
+          </Field>
+          <div className="rounded-[10px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-900">
+            Ollama 模型和对话都在本机运行。请先启动 Ollama，并确认已经下载模型。
+          </div>
+        </>
       ) : (
         <>
           <Field label="Base URL">
@@ -287,7 +318,7 @@ export function ProviderForm({ provider, onSave, onCancel }: ProviderFormProps) 
         />
       </Field>
 
-      {draft.protocol !== "local-cli" ? (
+      {draft.protocol !== "local-cli" && draft.protocol !== "ollama" ? (
         <div className="rounded-[10px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
           {t("apiKeySafety")}
         </div>

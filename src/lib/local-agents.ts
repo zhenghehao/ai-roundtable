@@ -1,22 +1,61 @@
-import type { LocalCliConfig, ProviderConfig } from "@/lib/types";
+import type { LocalCliConfig, ProviderConfig, ProviderProtocol } from "@/lib/types";
 import { nowIso } from "@/lib/utils";
 
 type BuiltinLocalAgent = {
   id: string;
   name: string;
   note: string;
+  protocol?: ProviderProtocol;
+  baseUrl?: string;
+  apiKey?: string;
   defaultModel?: string;
   localCli: LocalCliConfig;
 };
 
 export const builtinLocalAgents: BuiltinLocalAgent[] = [
   {
+    id: "local-ollama",
+    name: "Ollama（本地下载模型）",
+    note: "自动检测 Ollama 本地服务，并读取已下载模型列表。默认地址：http://127.0.0.1:11434。",
+    protocol: "ollama",
+    baseUrl: "http://127.0.0.1:11434",
+    localCli: {
+      agentId: "ollama",
+      commandCandidates: ["ollama", "/Applications/Ollama.app/Contents/Resources/ollama"],
+      detectionPaths: ["/Applications/Ollama.app", "~/.ollama"],
+      args: [],
+      inputMode: "stdin",
+      outputFormat: "text",
+      capability: "adapted",
+      builtIn: true
+    }
+  },
+  {
+    id: "local-lmstudio",
+    name: "LM Studio（本地服务）",
+    note: "连接 LM Studio 的本地 OpenAI 兼容服务，并读取 /v1/models 返回的本地模型。默认地址：http://127.0.0.1:1234/v1。",
+    protocol: "openai-compatible",
+    baseUrl: "http://127.0.0.1:1234/v1",
+    apiKey: "lm-studio",
+    localCli: {
+      agentId: "lmstudio",
+      commandCandidates: ["lms"],
+      detectionPaths: ["/Applications/LM Studio.app", "~/.lmstudio", "~/.cache/lm-studio"],
+      args: [],
+      inputMode: "stdin",
+      outputFormat: "text",
+      capability: "adapted",
+      builtIn: true
+    }
+  },
+  {
     id: "local-codex",
     name: "Codex CLI（本地）",
     note: "官方 Headless CLI，圆桌默认以只读沙箱运行。",
     localCli: {
       agentId: "codex",
-      commandCandidates: ["codex"],
+      commandCandidates: ["codex", "/Applications/Codex.app/Contents/Resources/codex"],
+      detectionPaths: ["/Applications/Codex.app", "~/.codex"],
       args: [],
       inputMode: "stdin",
       outputFormat: "text",
@@ -31,6 +70,7 @@ export const builtinLocalAgents: BuiltinLocalAgent[] = [
     localCli: {
       agentId: "claude",
       commandCandidates: ["claude"],
+      detectionPaths: ["/Applications/Claude.app", "~/.claude"],
       args: [],
       inputMode: "stdin",
       outputFormat: "json",
@@ -45,7 +85,8 @@ export const builtinLocalAgents: BuiltinLocalAgent[] = [
     note: "官方 Headless CLI。无头模式通常需要 KIRO_API_KEY 和支持该功能的套餐。",
     localCli: {
       agentId: "kiro",
-      commandCandidates: ["kiro-cli"],
+      commandCandidates: ["kiro-cli", "/Applications/Kiro CLI.app/Contents/MacOS/kiro-cli"],
+      detectionPaths: ["/Applications/Kiro CLI.app", "~/.kiro"],
       args: [],
       inputMode: "argument",
       outputFormat: "text",
@@ -60,6 +101,7 @@ export const builtinLocalAgents: BuiltinLocalAgent[] = [
     localCli: {
       agentId: "gemini",
       commandCandidates: ["gemini"],
+      detectionPaths: ["~/.gemini", "~/.config/gemini"],
       args: [],
       inputMode: "stdin",
       outputFormat: "json",
@@ -75,6 +117,7 @@ export const builtinLocalAgents: BuiltinLocalAgent[] = [
     localCli: {
       agentId: "codebuddy",
       commandCandidates: ["codebuddy", "cbc"],
+      detectionPaths: ["~/.codebuddy", "~/.config/codebuddy"],
       args: [],
       inputMode: "stdin",
       outputFormat: "json",
@@ -90,6 +133,7 @@ export const builtinLocalAgents: BuiltinLocalAgent[] = [
     localCli: {
       agentId: "hermes",
       commandCandidates: ["hermes"],
+      detectionPaths: ["~/.hermes"],
       args: [],
       inputMode: "argument",
       outputFormat: "text",
@@ -118,9 +162,9 @@ export function createBuiltinLocalProviders(createdAt = nowIso()): ProviderConfi
   return builtinLocalAgents.map((agent) => ({
     id: agent.id,
     name: agent.name,
-    protocol: "local-cli",
-    baseUrl: "",
-    apiKey: "",
+    protocol: agent.protocol || "local-cli",
+    baseUrl: agent.baseUrl || "",
+    apiKey: agent.apiKey || "",
     defaultModel: agent.defaultModel || "",
     note: agent.note,
     localCli: agent.localCli,

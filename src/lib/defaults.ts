@@ -188,8 +188,15 @@ export function createDefaultAppState(): AppState {
     activeRoomId: defaultRoom.id,
     settings: {
       language: defaultLanguageCode,
-      theme: "light"
+      theme: "light",
+      knowledgeBase: {
+        enabled: false,
+        kind: "obsidian",
+        vaultPath: "",
+        maxNotes: 5,
+        maxCharsPerNote: 2400
+      }
     },
-    version: 2
+    version: 3
   };
 }

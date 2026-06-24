@@ -70,6 +70,15 @@ function toOpenAIMessage(message: ModelMessage) {
   };
 }
 
+function isLocalBaseUrl(baseUrl: string) {
+  try {
+    const url = new URL(baseUrl);
+    return ["localhost", "127.0.0.1", "::1", "0.0.0.0"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export async function callOpenAICompatible(input: ModelInput): Promise<ModelResponse> {
   const apiKey = input.provider.apiKey.trim();
   const baseUrl = trimTrailingSlash(input.provider.baseUrl.trim());
@@ -79,7 +88,7 @@ export async function callOpenAICompatible(input: ModelInput): Promise<ModelResp
     throw new ModelAdapterError("请先填写 Base URL。");
   }
 
-  if (!apiKey) {
+  if (!apiKey && !isLocalBaseUrl(baseUrl)) {
     throw new ModelAdapterError("请先填写 API Key。API Key 只会保存在你的浏览器本地。");
   }
 
@@ -93,7 +102,7 @@ export async function callOpenAICompatible(input: ModelInput): Promise<ModelResp
       signal,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
       },
       body: JSON.stringify({
         model,

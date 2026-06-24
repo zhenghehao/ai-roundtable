@@ -1,4 +1,4 @@
-export type ProviderProtocol = "openai-compatible" | "anthropic" | "local-cli";
+export type ProviderProtocol = "openai-compatible" | "anthropic" | "local-cli" | "ollama";
 
 export type LocalAgentCapability = "adapted" | "detect-only";
 
@@ -36,6 +36,15 @@ export type ThemeMode = "light" | "dark";
 export interface AppSettings {
   language: LanguageCode;
   theme: ThemeMode;
+  knowledgeBase: KnowledgeBaseSettings;
+}
+
+export interface KnowledgeBaseSettings {
+  enabled: boolean;
+  kind: "obsidian";
+  vaultPath: string;
+  maxNotes: number;
+  maxCharsPerNote: number;
 }
 
 export interface ProviderConfig {
@@ -66,8 +75,10 @@ export interface LocalCliConfig {
 
 export interface LocalAgentDetectionRequest {
   id: string;
+  agentId?: string;
   commandCandidates: string[];
   detectionPaths?: string[];
+  baseUrl?: string;
 }
 
 export interface LocalAgentDetection {
@@ -76,6 +87,33 @@ export interface LocalAgentDetection {
   configured?: boolean;
   command?: string;
   path?: string;
+  message?: string;
+}
+
+export type LocalAgentModelSource = "cli" | "server" | "package" | "cache" | "config" | "built-in" | "configured" | "unavailable";
+
+export interface LocalAgentModelRequest {
+  id: string;
+  agentId: string;
+  commandCandidates: string[];
+  configuredModel?: string;
+  args?: string[];
+  baseUrl?: string;
+}
+
+export interface LocalAgentModelOption {
+  id: string;
+  label?: string;
+}
+
+export interface LocalAgentModelCatalog {
+  id: string;
+  models: LocalAgentModelOption[];
+  defaultModel?: string;
+  currentModel?: string;
+  source: LocalAgentModelSource;
+  supportsSelection: boolean;
+  message?: string;
 }
 
 export interface ProviderTemplate {
@@ -173,4 +211,27 @@ export interface ModelInput {
 export interface ModelResponse {
   content: string;
   raw?: unknown;
+}
+
+export interface KnowledgeBaseSearchRequest {
+  vaultPath: string;
+  query: string;
+  limit?: number;
+  maxCharsPerNote?: number;
+}
+
+export interface KnowledgeBaseSearchHit {
+  title: string;
+  relativePath: string;
+  score: number;
+  excerpt: string;
+  modifiedAt?: string;
+}
+
+export interface KnowledgeBaseSearchResult {
+  vaultPath: string;
+  query: string;
+  hits: KnowledgeBaseSearchHit[];
+  scannedFileCount: number;
+  message?: string;
 }

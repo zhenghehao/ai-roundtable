@@ -3,6 +3,7 @@ import { createId } from "@/lib/utils";
 import { callAnthropic } from "./anthropic";
 import { cleanModelOutput } from "./clean-output";
 import { ModelAdapterError, toFriendlyError } from "./errors";
+import { callOllama } from "./ollama";
 import { callOpenAICompatible } from "./openai-compatible";
 
 export async function callModel(input: ModelInput): Promise<ModelResponse> {
@@ -80,6 +81,10 @@ export async function callModel(input: ModelInput): Promise<ModelResponse> {
 
   if (input.provider.protocol === "local-cli") {
     throw new ModelAdapterError("本地 CLI 只能在 AI圆桌桌面版中调用。");
+  }
+
+  if (input.provider.protocol === "ollama") {
+    return cleanResponse(await callOllama(input));
   }
 
   if (input.provider.protocol === "anthropic") {

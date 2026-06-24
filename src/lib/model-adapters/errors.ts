@@ -159,6 +159,27 @@ export function buildConnectionTestReport(error: unknown, provider: Pick<Provide
       .join("\n");
   }
 
+  if (provider.protocol === "ollama") {
+    return [
+      "Ollama 测试失败",
+      "",
+      `可能原因：${friendlyMessage}`,
+      rawMessage && rawMessage !== friendlyMessage ? `原始信息：${rawMessage}` : "",
+      "",
+      "建议处理：",
+      "1. 确认 Ollama 已安装，并且本地服务正在运行。",
+      "2. 在终端运行 ollama list，确认已经下载至少一个模型。",
+      "3. 在模型配置中选择一个已下载模型后再测试。",
+      "",
+      "当前测试配置：",
+      `服务商：${provider.name || "Ollama"}`,
+      `Base URL：${provider.baseUrl || "http://127.0.0.1:11434"}`,
+      `模型：${provider.defaultModel || "未选择"}`
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   getProviderConfigurationHints(provider).forEach((hint) => suggestions.add(hint));
 
   if (/api key|token|unauthorized|authentication|401|403|无效|权限|区域/.test(searchable)) {

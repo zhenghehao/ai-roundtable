@@ -1,6 +1,10 @@
 import type {
+  KnowledgeBaseSearchRequest,
+  KnowledgeBaseSearchResult,
   LocalAgentDetection,
   LocalAgentDetectionRequest,
+  LocalAgentModelCatalog,
+  LocalAgentModelRequest,
   ModelInput,
   ModelResponse
 } from "@/lib/types";
@@ -11,6 +15,9 @@ declare global {
       callModel: (input: Omit<ModelInput, "signal"> & { requestId: string }) => Promise<ModelResponse>;
       cancelModelCall: (requestId: string) => Promise<boolean>;
       detectLocalAgents: (requests: LocalAgentDetectionRequest[]) => Promise<LocalAgentDetection[]>;
+      listLocalAgentModels: (requests: LocalAgentModelRequest[]) => Promise<LocalAgentModelCatalog[]>;
+      selectKnowledgeBaseVault: () => Promise<string | undefined>;
+      searchKnowledgeBase: (request: KnowledgeBaseSearchRequest) => Promise<KnowledgeBaseSearchResult>;
     };
   }
 }

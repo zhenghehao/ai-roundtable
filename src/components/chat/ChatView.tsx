@@ -25,16 +25,25 @@ import {
   MAX_ATTACHMENT_BYTES
 } from "@/lib/attachments";
 import { useI18n } from "@/lib/i18n-context";
-import type { AgentRole, ChatAttachment, ChatMessage, ChatRoom, ProviderConfig } from "@/lib/types";
+import type {
+  AgentRole,
+  ChatAttachment,
+  ChatMessage,
+  ChatRoom,
+  LocalAgentModelCatalog,
+  ProviderConfig
+} from "@/lib/types";
 import { clampRounds, cn } from "@/lib/utils";
 
 interface ChatViewProps {
   room: ChatRoom;
   roles: AgentRole[];
   providers: ProviderConfig[];
+  localAgentModelCatalogs: LocalAgentModelCatalog[];
   isRunning: boolean;
   speakingRoleId?: string;
   onUpdateRoom: (room: ChatRoom) => void;
+  onUpdateRoleModel: (roleId: string, model: string) => void;
   onStart: (topic: string, rounds: number, attachments?: ChatAttachment[]) => void;
   onContinue: (rounds: number) => void;
   onStop: () => void;
@@ -48,9 +57,11 @@ export function ChatView({
   room,
   roles,
   providers,
+  localAgentModelCatalogs,
   isRunning,
   speakingRoleId,
   onUpdateRoom,
+  onUpdateRoleModel,
   onStart,
   onContinue,
   onStop,
@@ -78,6 +89,10 @@ export function ChatView({
   );
   const enabledSelectedRoles = selectedRoles.filter((role) => role.enabled);
   const speakingRole = roles.find((role) => role.id === speakingRoleId);
+  const modelCatalogByProviderId = useMemo(
+    () => new Map(localAgentModelCatalogs.map((catalog) => [catalog.id, catalog])),
+    [localAgentModelCatalogs]
+  );
   const mentionCandidates = useMemo(() => {
     if (mentionQuery === undefined) {
       return [];
@@ -136,6 +151,18 @@ export function ChatView({
       ...room,
       roleIds: nextIds
     });
+  };
+
+  const updateRoleModel = (role: AgentRole, value: string) => {
+    if (value === "__custom__") {
+      const customModel = window.prompt("请输入该 CLI 支持的模型名", role.model)?.trim();
+      if (customModel) {
+        onUpdateRoleModel(role.id, customModel);
+      }
+      return;
+    }
+
+    onUpdateRoleModel(role.id, value);
   };
 
   const updateMentionState = (value: string, caretPosition: number) => {
@@ -318,26 +345,74 @@ export function ChatView({
               roleChips.map((role) => {
                 const checked = room.roleIds.includes(role.id);
                 const orderIndex = room.roleIds.indexOf(role.id);
+                const provider = providers.find((item) => item.id === role.providerId);
+                const modelCatalog = provider ? modelCatalogByProviderId.get(provider.id) : undefined;
+                const hasLocalModelCatalog = Boolean(provider?.localCli || provider?.protocol === "ollama");
+                const selectedModel = role.model || provider?.defaultModel || "";
+                const modelOptions = Array.from(
+                  new Map(
+                    [
+                      ...(selectedModel ? [{ id: selectedModel }] : []),
+                      ...(provider?.defaultModel ? [{ id: provider.defaultModel }] : []),
+                      ...(modelCatalog?.models || [])
+                    ].map((model) => [model.id, model])
+                  ).values()
+                );
                 return (
-                  <button
+                  <div
                     key={role.id}
                     className={cn(
                       "flex h-8 shrink-0 items-center gap-2 rounded-[10px] border px-2.5 text-xs font-medium transition duration-200",
                       checked ? "role-chip-selected" : "role-chip-idle",
                       !role.enabled ? "opacity-50" : ""
                     )}
-                    onClick={() => toggleRole(role.id)}
-                    disabled={isRunning}
                     title={role.enabled ? role.name : `${role.name} ${t("disabled")}`}
                   >
-                    <RoleAvatar role={role} size="xs" />
-                    {checked && room.mode !== "private" ? (
-                      <span className="flex h-4 min-w-4 items-center justify-center rounded-[5px] bg-[var(--accent)] px-1 text-[9px] font-semibold text-white">
-                        {orderIndex + 1}
+                    <button
+                      type="button"
+                      className="flex min-w-0 items-center gap-2"
+                      onClick={() => toggleRole(role.id)}
+                      disabled={isRunning}
+                    >
+                      <RoleAvatar role={role} size="xs" />
+                      {checked && room.mode !== "private" ? (
+                        <span className="flex h-4 min-w-4 items-center justify-center rounded-[5px] bg-[var(--accent)] px-1 text-[9px] font-semibold text-white">
+                          {orderIndex + 1}
+                        </span>
+                      ) : null}
+                      <span className="whitespace-nowrap">{role.name}</span>
+                    </button>
+                    {checked && hasLocalModelCatalog ? (
+                      <span
+                        className="relative ml-0.5 flex items-center border-l border-current/15 pl-2"
+                        title={modelCatalog?.message || "选择该角色调用本地运行时时使用的模型"}
+                      >
+                        <select
+                          aria-label={`${role.name} 模型`}
+                          className="h-6 max-w-[150px] appearance-none bg-transparent py-0 pl-1 pr-5 text-[10px] font-medium outline-none"
+                          value={selectedModel}
+                          disabled={isRunning || modelCatalog?.supportsSelection === false}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => updateRoleModel(role, event.target.value)}
+                        >
+                          <option value="">
+                            {provider?.defaultModel
+                              ? `配置默认：${provider.defaultModel}`
+                              : provider?.protocol === "local-cli"
+                                ? "CLI 默认模型"
+                                : "不指定模型"}
+                          </option>
+                          {modelOptions.map((model) => (
+                            <option key={model.id} value={model.id}>
+                              {model.label && model.label !== model.id ? `${model.label} (${model.id})` : model.id}
+                            </option>
+                          ))}
+                          <option value="__custom__">自定义模型...</option>
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-0 top-1/2 h-3 w-3 -translate-y-1/2 opacity-60" />
                       </span>
                     ) : null}
-                    {role.name}
-                  </button>
+                  </div>
                 );
               })
             )}

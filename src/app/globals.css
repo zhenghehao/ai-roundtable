@@ -166,6 +166,67 @@ select {
   color: var(--sidebar-muted) !important;
 }
 
+.room-list-shell {
+  border-radius: 14px;
+}
+
+.room-list-scroll {
+  scrollbar-color: color-mix(in srgb, var(--accent) 48%, transparent) transparent;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.room-list-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.room-list-scroll::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sidebar-line) 42%, transparent);
+}
+
+.room-list-scroll::-webkit-scrollbar-thumb {
+  min-height: 38px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 48%, var(--sidebar-line));
+}
+
+.room-scroll-fade {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 7px;
+  z-index: 2;
+  height: 24px;
+}
+
+.room-scroll-fade-top {
+  top: 0;
+  background: linear-gradient(to bottom, var(--sidebar), transparent);
+}
+
+.room-scroll-fade-bottom {
+  bottom: 0;
+  background: linear-gradient(to top, var(--sidebar), transparent);
+}
+
+.room-scroll-hint {
+  display: flex;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: 5px 8px 0;
+  border: 1px solid color-mix(in srgb, var(--accent-border) 68%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+  color: var(--accent-strong);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 .chat-header {
   border-color: var(--line);
   background: var(--surface);

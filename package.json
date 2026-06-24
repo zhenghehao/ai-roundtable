@@ -1,6 +1,6 @@
 {
   "name": "ai-roundtable",
-  "version": "2.2.0",
+  "version": "2.2.2",
   "private": true,
   "productName": "AI圆桌",
   "main": "electron/main.cjs",

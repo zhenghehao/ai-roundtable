@@ -44,8 +44,11 @@ import type {
   ChatAttachment,
   ChatMessage,
   ChatRoom,
+  KnowledgeBaseSearchResult,
   LocalAgentDetection,
   LocalAgentDetectionRequest,
+  LocalAgentModelCatalog,
+  LocalAgentModelRequest,
   ModelMessage,
   ProviderConfig,
   RoomContextMemory,
@@ -62,6 +65,7 @@ export function RoundtableApp() {
   const [speakingRoleId, setSpeakingRoleId] = useState<string | undefined>();
   const [testingProviderId, setTestingProviderId] = useState<string | undefined>();
   const [localAgentDetections, setLocalAgentDetections] = useState<LocalAgentDetection[]>([]);
+  const [localAgentModelCatalogs, setLocalAgentModelCatalogs] = useState<LocalAgentModelCatalog[]>([]);
   const [detectingLocalAgents, setDetectingLocalAgents] = useState(false);
   const [notice, setNotice] = useState("");
   const [newRoomOpen, setNewRoomOpen] = useState(false);
@@ -71,30 +75,48 @@ export function RoundtableApp() {
   const stateRef = useRef(state);
   const abortRef = useRef<AbortController | null>(null);
   const localAgentSignature = state.providers
-    .filter((provider) => provider.protocol === "local-cli" && provider.localCli)
+    .filter((provider) => provider.localCli)
     .map(
       (provider) =>
-        `${provider.id}:${provider.localCli?.commandCandidates.join("|")}:${provider.localCli?.detectionPaths?.join("|") || ""}`
+        `${provider.id}:${provider.protocol}:${provider.baseUrl}:${provider.defaultModel}:${provider.localCli?.agentId}:${provider.localCli?.commandCandidates.join("|")}:${provider.localCli?.detectionPaths?.join("|") || ""}:${provider.localCli?.args.join("|") || ""}`
     )
     .join(",");
 
   const detectLocalAgents = async (providers = stateRef.current.providers) => {
-    const requests: LocalAgentDetectionRequest[] = providers
-      .filter((provider) => provider.protocol === "local-cli" && provider.localCli)
+    const detectionRequests: LocalAgentDetectionRequest[] = providers
+      .filter((provider) => provider.localCli)
       .map((provider) => ({
         id: provider.id,
+        agentId: provider.localCli?.agentId,
         commandCandidates: provider.localCli?.commandCandidates || [],
-        detectionPaths: provider.localCli?.detectionPaths || []
+        detectionPaths: provider.localCli?.detectionPaths || [],
+        baseUrl: provider.baseUrl
+      }));
+    const modelRequests: LocalAgentModelRequest[] = providers
+      .filter((provider) => provider.localCli)
+      .map((provider) => ({
+        id: provider.id,
+        agentId: provider.localCli?.agentId || "",
+        commandCandidates: provider.localCli?.commandCandidates || [],
+        configuredModel: provider.defaultModel,
+        args: provider.localCli?.args || [],
+        baseUrl: provider.baseUrl
       }));
 
-    if (!window.roundtableDesktop?.detectLocalAgents) {
+    if (!window.roundtableDesktop?.detectLocalAgents || !window.roundtableDesktop?.listLocalAgentModels) {
       setLocalAgentDetections([]);
+      setLocalAgentModelCatalogs([]);
       return;
     }
 
     setDetectingLocalAgents(true);
     try {
-      setLocalAgentDetections(await window.roundtableDesktop.detectLocalAgents(requests));
+      const [detections, modelCatalogs] = await Promise.all([
+        window.roundtableDesktop.detectLocalAgents(detectionRequests),
+        window.roundtableDesktop.listLocalAgentModels(modelRequests)
+      ]);
+      setLocalAgentDetections(detections);
+      setLocalAgentModelCatalogs(modelCatalogs);
     } finally {
       setDetectingLocalAgents(false);
     }
@@ -248,6 +270,37 @@ export function RoundtableApp() {
     showNotice(t("providerDeleted"));
   };
 
+  const updateProviderDefaultModel = (providerId: string, model: string) => {
+    setState((current) => {
+      const provider = current.providers.find((item) => item.id === providerId);
+      const previousDefaultModel = provider?.defaultModel || "";
+      const timestamp = nowIso();
+
+      return {
+        ...current,
+        providers: current.providers.map((item) =>
+          item.id === providerId
+            ? {
+                ...item,
+                defaultModel: model,
+                updatedAt: timestamp
+              }
+            : item
+        ),
+        roles: current.roles.map((role) =>
+          role.providerId === providerId && (!role.model || role.model === previousDefaultModel)
+            ? {
+                ...role,
+                model,
+                updatedAt: timestamp
+              }
+            : role
+        )
+      };
+    });
+    showNotice(model ? `默认模型已切换为 ${model}` : "已恢复跟随 CLI 默认模型");
+  };
+
   const saveRole = (role: AgentRole) => {
     setState((current) => {
       const exists = current.roles.some((item) => item.id === role.id);
@@ -267,6 +320,22 @@ export function RoundtableApp() {
       };
     });
     showNotice(t("roleSaved"));
+  };
+
+  const updateRoleModel = (roleId: string, model: string) => {
+    setState((current) => ({
+      ...current,
+      roles: current.roles.map((role) =>
+        role.id === roleId
+          ? {
+              ...role,
+              model,
+              updatedAt: nowIso()
+            }
+          : role
+      )
+    }));
+    showNotice(model ? `已切换模型：${model}` : "已恢复配置默认模型");
   };
 
   const deleteRole = (roleId: string) => {
@@ -301,6 +370,132 @@ export function RoundtableApp() {
         theme
       }
     }));
+  };
+
+  const updateKnowledgeBase = (knowledgeBase: AppState["settings"]["knowledgeBase"]) => {
+    setState((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        knowledgeBase
+      }
+    }));
+    showNotice(knowledgeBase.enabled ? "知识库检索已开启" : "知识库检索已关闭");
+  };
+
+  const selectKnowledgeBaseVault = async () => {
+    if (!window.roundtableDesktop?.selectKnowledgeBaseVault) {
+      window.alert("读取本地 Obsidian 知识库需要使用 AI圆桌桌面版。");
+      return;
+    }
+
+    const vaultPath = await window.roundtableDesktop.selectKnowledgeBaseVault();
+    if (!vaultPath) {
+      return;
+    }
+
+    updateKnowledgeBase({
+      ...stateRef.current.settings.knowledgeBase,
+      enabled: true,
+      vaultPath
+    });
+    showNotice("已选择 Obsidian 知识库");
+  };
+
+  const formatKnowledgeSearchResult = (result: KnowledgeBaseSearchResult) => {
+    const lines = [
+      "# Obsidian 知识库检索结果",
+      "",
+      `检索词：${result.query || "当前圆桌主题"}`,
+      `命中笔记：${result.hits.length} / 已扫描：${result.scannedFileCount}`,
+      result.message ? `说明：${result.message}` : "",
+      ""
+    ].filter(Boolean);
+
+    result.hits.forEach((hit, index) => {
+      lines.push(`## ${index + 1}. ${hit.title}`);
+      lines.push(`路径：${hit.relativePath}`);
+      if (hit.modifiedAt) {
+        lines.push(`更新时间：${new Date(hit.modifiedAt).toLocaleString("zh-CN")}`);
+      }
+      lines.push("");
+      lines.push(hit.excerpt);
+      lines.push("");
+    });
+
+    return lines.join("\n");
+  };
+
+  const searchKnowledgeForTopic = async (query: string): Promise<ChatAttachment | undefined> => {
+    const knowledgeBase = stateRef.current.settings.knowledgeBase;
+    if (!knowledgeBase.enabled || !knowledgeBase.vaultPath) {
+      return undefined;
+    }
+
+    if (!window.roundtableDesktop?.searchKnowledgeBase) {
+      showNotice("桌面版才能读取本地知识库");
+      return undefined;
+    }
+
+    try {
+      showNotice("正在检索 Obsidian 知识库...");
+      const result = await window.roundtableDesktop.searchKnowledgeBase({
+        vaultPath: knowledgeBase.vaultPath,
+        query,
+        limit: knowledgeBase.maxNotes,
+        maxCharsPerNote: knowledgeBase.maxCharsPerNote
+      });
+
+      if (result.hits.length === 0) {
+        showNotice("知识库没有匹配到相关笔记");
+        return undefined;
+      }
+
+      const extractedText = formatKnowledgeSearchResult(result);
+      showNotice(`已读取 ${result.hits.length} 篇知识库笔记`);
+      return {
+        id: createId("attachment"),
+        name: "Obsidian 知识库检索.md",
+        mimeType: "text/markdown",
+        size: extractedText.length,
+        kind: "text",
+        extractedText,
+        status: "ready",
+        createdAt: nowIso()
+      };
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "知识库读取失败，请检查路径权限。");
+      return undefined;
+    }
+  };
+
+  const testKnowledgeBaseSearch = async () => {
+    const knowledgeBase = stateRef.current.settings.knowledgeBase;
+    if (!knowledgeBase.vaultPath) {
+      window.alert("请先选择 Obsidian 知识库文件夹。");
+      return;
+    }
+
+    const query = window.prompt("输入一个测试检索词", activeRoom?.name || "")?.trim();
+    if (!query || !window.roundtableDesktop?.searchKnowledgeBase) {
+      return;
+    }
+
+    try {
+      const result = await window.roundtableDesktop.searchKnowledgeBase({
+        vaultPath: knowledgeBase.vaultPath,
+        query,
+        limit: knowledgeBase.maxNotes,
+        maxCharsPerNote: knowledgeBase.maxCharsPerNote
+      });
+      window.alert(
+        result.hits.length > 0
+          ? `找到 ${result.hits.length} 篇相关笔记：\n${result.hits.map((hit) => `- ${hit.relativePath}`).join("\n")}`
+          : `没有找到相关笔记。\n${result.message || ""}`
+      );
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "知识库测试检索失败。");
+    }
   };
 
   const createRoom = (input: { name: string; mode: RoomMode; roleIds: string[]; defaultRounds: number }) => {
@@ -516,7 +711,9 @@ export function RoundtableApp() {
     let messages = room.messages;
     let contextMemory = room.contextMemory;
     if (topic || attachments.length > 0) {
-      messages = [...messages, makeUserMessage(room.id, topic || t("defaultAttachmentTopic"), attachments)];
+      const knowledgeAttachment = await searchKnowledgeForTopic(topic || room.name);
+      const discussionAttachments = knowledgeAttachment ? [...attachments, knowledgeAttachment] : attachments;
+      messages = [...messages, makeUserMessage(room.id, topic || t("defaultAttachmentTopic"), discussionAttachments)];
       commitMessages(room.id, messages);
       if (mentionedRoles.length > 0) {
         const planText = discussionPlan.stages
@@ -893,9 +1090,11 @@ export function RoundtableApp() {
                 room={activeRoom}
                 roles={state.roles}
                 providers={state.providers}
+                localAgentModelCatalogs={localAgentModelCatalogs}
                 isRunning={isRunning}
                 speakingRoleId={speakingRoleId}
                 onUpdateRoom={updateRoom}
+                onUpdateRoleModel={updateRoleModel}
                 onStart={(topic, rounds, attachments) => void runDiscussion(rounds, topic, attachments)}
                 onContinue={(rounds) => void runDiscussion(rounds)}
                 onStop={stopDiscussion}
@@ -918,8 +1117,10 @@ export function RoundtableApp() {
                 onTest={testProvider}
                 testingProviderId={testingProviderId}
                 localAgentDetections={localAgentDetections}
+                localAgentModelCatalogs={localAgentModelCatalogs}
                 detectingLocalAgents={detectingLocalAgents}
                 onDetectLocalAgents={() => void detectLocalAgents()}
+                onSelectLocalModel={updateProviderDefaultModel}
               />
             ) : null}
 
@@ -934,7 +1135,16 @@ export function RoundtableApp() {
             ) : null}
 
             {activeView === "settings" ? (
-              <SettingsView language={state.settings.language} onLanguageChange={updateLanguage} onReset={resetAll} />
+              <SettingsView
+                language={state.settings.language}
+                knowledgeBase={state.settings.knowledgeBase}
+                isDesktopApp={isDesktopApp}
+                onLanguageChange={updateLanguage}
+                onKnowledgeBaseChange={updateKnowledgeBase}
+                onSelectKnowledgeBase={() => void selectKnowledgeBaseVault()}
+                onTestKnowledgeBase={() => void testKnowledgeBaseSearch()}
+                onReset={resetAll}
+              />
             ) : null}
 
             <NewRoomDialog
