@@ -47,6 +47,24 @@ export interface KnowledgeBaseSettings {
   maxCharsPerNote: number;
 }
 
+export type KnowledgeBaseSelectionKind = "file" | "directory";
+
+export type RoomKnowledgeBaseMode = "auto" | "selection";
+
+export interface KnowledgeBaseSelection {
+  kind: KnowledgeBaseSelectionKind;
+  relativePath: string;
+  title: string;
+}
+
+export interface RoomKnowledgeBaseSettings {
+  enabled: boolean;
+  mode: RoomKnowledgeBaseMode;
+  selectedItems: KnowledgeBaseSelection[];
+  maxNotes: number;
+  maxCharsPerNote: number;
+}
+
 export interface ProviderConfig {
   id: string;
   name: string;
@@ -180,6 +198,7 @@ export interface ChatRoom {
   roleIds: string[];
   defaultRounds: number;
   messages: ChatMessage[];
+  knowledgeBase?: RoomKnowledgeBaseSettings;
   contextMemory?: RoomContextMemory;
   createdAt: string;
   updatedAt: string;
@@ -234,4 +253,32 @@ export interface KnowledgeBaseSearchResult {
   hits: KnowledgeBaseSearchHit[];
   scannedFileCount: number;
   message?: string;
+}
+
+export interface KnowledgeBaseListRequest {
+  vaultPath: string;
+  relativePath?: string;
+}
+
+export interface KnowledgeBaseEntry {
+  kind: KnowledgeBaseSelectionKind;
+  title: string;
+  relativePath: string;
+  modifiedAt?: string;
+}
+
+export interface KnowledgeBaseListResult {
+  vaultPath: string;
+  relativePath: string;
+  entries: KnowledgeBaseEntry[];
+  message?: string;
+}
+
+export interface KnowledgeBaseSelectionReadRequest {
+  vaultPath: string;
+  items: KnowledgeBaseSelection[];
+  maxNotes?: number;
+  maxCharsPerNote?: number;
+  maxDirectoryNotes?: number;
+  directoryIndexCharsPerNote?: number;
 }

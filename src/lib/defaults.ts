@@ -193,7 +193,7 @@ export function createDefaultAppState(): AppState {
         enabled: false,
         kind: "obsidian",
         vaultPath: "",
-        maxNotes: 5,
+        maxNotes: 12,
         maxCharsPerNote: 2400
       }
     },

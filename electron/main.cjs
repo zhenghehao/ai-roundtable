@@ -766,15 +766,27 @@ function isMarkdownKnowledgeFile(filePath) {
 function resolveKnowledgeVaultPath(vaultPath) {
   const resolved = resolveDetectionPath(vaultPath);
   if (!resolved) {
-    throw createFriendlyError("请先选择 Obsidian 知识库文件夹。");
+    throw createFriendlyError("请先选择 Obsidian 笔记目录。");
   }
 
   const stat = fs.statSync(resolved);
   if (!stat.isDirectory()) {
-    throw createFriendlyError("选择的知识库路径不是文件夹。");
+    throw createFriendlyError("选择的笔记目录路径不是文件夹。");
   }
 
   return resolved;
+}
+
+function resolveKnowledgeChildPath(vaultPath, relativePath = "") {
+  const rootPath = resolveKnowledgeVaultPath(vaultPath);
+  const requested = path.resolve(rootPath, String(relativePath || ""));
+  const relative = path.relative(rootPath, requested);
+
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw createFriendlyError("选择的知识库路径超出了笔记目录范围。");
+  }
+
+  return { rootPath, requestedPath: requested, relativePath: relative === "" ? "" : relative };
 }
 
 function collectKnowledgeFiles(rootPath) {
@@ -791,7 +803,10 @@ function collectKnowledgeFiles(rootPath) {
       continue;
     }
 
-    for (const entry of entries) {
+    const sortedEntries = entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const directories = [];
+
+    for (const entry of sortedEntries) {
       if (entry.isSymbolicLink()) {
         continue;
       }
@@ -799,7 +814,7 @@ function collectKnowledgeFiles(rootPath) {
       const filePath = path.join(current, entry.name);
       if (entry.isDirectory()) {
         if (!KNOWLEDGE_EXCLUDED_DIRECTORIES.has(entry.name)) {
-          stack.push(filePath);
+          directories.push(filePath);
         }
         continue;
       }
@@ -811,9 +826,32 @@ function collectKnowledgeFiles(rootPath) {
         }
       }
     }
+
+    directories.reverse().forEach((directoryPath) => stack.push(directoryPath));
   }
 
   return files;
+}
+
+function readKnowledgeFileHit(rootPath, filePath, maxCharsPerNote, score = 999, options = {}) {
+  const stat = fs.statSync(filePath);
+  const source = fs.readFileSync(filePath, "utf8");
+  const signals = extractObsidianKnowledgeSignals(source);
+  const stripped = stripObsidianSyntax(source);
+  const content = options.indexOnly
+    ? signals.excerptSource || stripped
+    : signals.excerptSource
+      ? `${signals.excerptSource}\n\n${stripped}`
+      : signals.content;
+  const relativePath = path.relative(rootPath, filePath);
+
+  return {
+    title: path.basename(filePath).replace(/\.(md|markdown)$/i, ""),
+    relativePath,
+    score,
+    excerpt: makeKnowledgeExcerpt(content, [], maxCharsPerNote),
+    modifiedAt: stat.mtime.toISOString()
+  };
 }
 
 function tokenizeKnowledgeQuery(query) {
@@ -833,7 +871,7 @@ function tokenizeKnowledgeQuery(query) {
 
 function stripObsidianSyntax(markdown) {
   return String(markdown || "")
-    .replace(/^---[\s\S]*?---\s*/m, "")
+    .replace(/^---\s*\r?\n[\s\S]*?\r?\n---\s*/, "")
     .replace(/!\[\[[^\]]+\]\]/g, "")
     .replace(/\[\[([^\]|]+)\|?([^\]]*)\]\]/g, (_match, target, label) => label || target)
     .replace(/`{3}[\s\S]*?`{3}/g, "")
@@ -841,6 +879,96 @@ function stripObsidianSyntax(markdown) {
     .replace(/[#>*_~]/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+const KNOWLEDGE_SIGNAL_KEY_PATTERN =
+  /^(summary|synopsis|outline|tags?|characters?|roles?|locations?|timeline|time|摘要|本章摘要|章节摘要|章节要点|要点|标签|关键词|人物|角色|地点|场景|时间线|时间|伏笔|线索|主题)\s*[:：]/i;
+
+const KNOWLEDGE_SIGNAL_HEADING_PATTERN =
+  /(summary|synopsis|outline|tags?|characters?|roles?|locations?|timeline|摘要|本章摘要|章节摘要|章节要点|要点|标签|关键词|人物|角色|地点|场景|时间线|伏笔|线索|主题|剧情|概述)/i;
+
+function extractKnowledgeFrontmatterSignals(frontmatter) {
+  const picked = [];
+  let keepingList = false;
+  let listIndent = 0;
+
+  for (const line of String(frontmatter || "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      keepingList = false;
+      continue;
+    }
+
+    const indent = line.match(/^\s*/)?.[0].length || 0;
+    if (KNOWLEDGE_SIGNAL_KEY_PATTERN.test(trimmed)) {
+      picked.push(trimmed);
+      keepingList = true;
+      listIndent = indent;
+      continue;
+    }
+
+    if (keepingList && (trimmed.startsWith("-") || indent > listIndent)) {
+      picked.push(trimmed);
+      continue;
+    }
+
+    keepingList = false;
+  }
+
+  return picked.join("\n").trim();
+}
+
+function extractKnowledgeSections(markdown) {
+  const sections = [];
+  const lines = String(markdown || "").split(/\r?\n/);
+  let buffer = [];
+  let shouldCapture = false;
+
+  const flush = () => {
+    const section = stripObsidianSyntax(buffer.join("\n")).trim();
+    if (section) {
+      sections.push(section);
+    }
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (heading) {
+      if (shouldCapture) {
+        flush();
+      }
+
+      const headingText = stripObsidianSyntax(heading[2]).trim();
+      shouldCapture = KNOWLEDGE_SIGNAL_HEADING_PATTERN.test(headingText);
+      buffer = shouldCapture ? [headingText] : [];
+      continue;
+    }
+
+    if (shouldCapture) {
+      buffer.push(line);
+    }
+  }
+
+  if (shouldCapture) {
+    flush();
+  }
+
+  return sections.join("\n\n").slice(0, 20000).trim();
+}
+
+function extractObsidianKnowledgeSignals(markdown) {
+  const source = String(markdown || "");
+  const frontmatterMatch = /^---\s*\r?\n([\s\S]*?)\r?\n---\s*/.exec(source);
+  const metadata = extractKnowledgeFrontmatterSignals(frontmatterMatch?.[1] || "");
+  const sections = extractKnowledgeSections(source);
+  const stripped = stripObsidianSyntax(source);
+  const priorityText = [metadata, sections].filter(Boolean).join("\n\n").trim();
+
+  return {
+    content: [priorityText, priorityText, stripped].filter(Boolean).join("\n\n").trim(),
+    excerptSource: priorityText || stripped
+  };
 }
 
 function scoreKnowledgeFile({ title, content, terms, rawQuery }) {
@@ -891,7 +1019,7 @@ function searchKnowledgeBase(request) {
   const query = String(request.query || "").trim();
   const terms = tokenizeKnowledgeQuery(query || path.basename(vaultPath));
   const rawQuery = query.toLowerCase();
-  const limit = Math.min(12, Math.max(1, Number(request.limit || 5)));
+  const limit = Math.min(80, Math.max(1, Number(request.limit || 5)));
   const maxCharsPerNote = Math.min(8000, Math.max(600, Number(request.maxCharsPerNote || 2400)));
   const files = collectKnowledgeFiles(vaultPath);
   const hits = [];
@@ -915,8 +1043,8 @@ function searchKnowledgeBase(request) {
     }
 
     const title = path.basename(filePath).replace(/\.(md|markdown)$/i, "");
-    const content = stripObsidianSyntax(source);
-    const score = scoreKnowledgeFile({ title, content, terms, rawQuery });
+    const signals = extractObsidianKnowledgeSignals(source);
+    const score = scoreKnowledgeFile({ title, content: signals.content, terms, rawQuery });
     if (score <= 0) {
       continue;
     }
@@ -925,7 +1053,7 @@ function searchKnowledgeBase(request) {
       title,
       relativePath: path.relative(vaultPath, filePath),
       score,
-      excerpt: makeKnowledgeExcerpt(content, terms, maxCharsPerNote),
+      excerpt: makeKnowledgeExcerpt(signals.excerptSource || signals.content, terms, maxCharsPerNote),
       modifiedAt: stat.mtime.toISOString()
     });
   }
@@ -941,6 +1069,162 @@ function searchKnowledgeBase(request) {
       files.length >= MAX_KNOWLEDGE_FILES
         ? `已扫描前 ${MAX_KNOWLEDGE_FILES} 个 Markdown 文件`
         : `已扫描 ${files.length} 个 Markdown 文件`
+  };
+}
+
+function listKnowledgeBaseEntries(request) {
+  const { rootPath, requestedPath, relativePath } = resolveKnowledgeChildPath(request.vaultPath, request.relativePath);
+  const stat = fs.statSync(requestedPath);
+  if (!stat.isDirectory()) {
+    throw createFriendlyError("当前路径不是文件夹。");
+  }
+
+  const entries = fs
+    .readdirSync(requestedPath, { withFileTypes: true })
+    .filter((entry) => !entry.isSymbolicLink())
+    .filter((entry) => {
+      if (entry.isDirectory()) {
+        return !KNOWLEDGE_EXCLUDED_DIRECTORIES.has(entry.name);
+      }
+      return entry.isFile() && isMarkdownKnowledgeFile(entry.name);
+    })
+    .map((entry) => {
+      const filePath = path.join(requestedPath, entry.name);
+      const itemStat = fs.statSync(filePath);
+      const itemRelativePath = path.relative(rootPath, filePath);
+      const kind = entry.isDirectory() ? "directory" : "file";
+      return {
+        kind,
+        title: entry.isDirectory() ? entry.name : entry.name.replace(/\.(md|markdown)$/i, ""),
+        relativePath: itemRelativePath,
+        modifiedAt: itemStat.mtime.toISOString()
+      };
+    })
+    .sort((a, b) => {
+      if (a.kind !== b.kind) {
+        return a.kind === "directory" ? -1 : 1;
+      }
+      return a.title.localeCompare(b.title, undefined, { numeric: true });
+    });
+
+  return {
+    vaultPath: rootPath,
+    relativePath,
+    entries,
+    message: `已列出 ${entries.length} 项`
+  };
+}
+
+function readKnowledgeBaseSelection(request) {
+  const rootPath = resolveKnowledgeVaultPath(request.vaultPath);
+  const maxNotes = Math.min(40, Math.max(1, Number(request.maxNotes || 12)));
+  const maxCharsPerNote = Math.min(12000, Math.max(600, Number(request.maxCharsPerNote || 2400)));
+  const maxDirectoryNotes = Math.min(1200, Math.max(1, Number(request.maxDirectoryNotes || 1000)));
+  const directoryIndexCharsPerNote = Math.min(900, Math.max(160, Number(request.directoryIndexCharsPerNote || 420)));
+  const hits = [];
+  const seen = new Set();
+  const explicitFiles = [];
+  const directories = [];
+  let scannedFileCount = 0;
+  let explicitHitCount = 0;
+  let directoryHitCount = 0;
+  let directoryFileCount = 0;
+  let skippedOversized = 0;
+
+  for (const item of request.items || []) {
+    if (!item || typeof item.relativePath !== "string") {
+      continue;
+    }
+
+    const { requestedPath } = resolveKnowledgeChildPath(rootPath, item.relativePath);
+    let stat;
+    try {
+      stat = fs.statSync(requestedPath);
+    } catch {
+      continue;
+    }
+
+    if (stat.isDirectory()) {
+      directories.push(requestedPath);
+    } else if (stat.isFile() && isMarkdownKnowledgeFile(requestedPath)) {
+      explicitFiles.push(requestedPath);
+    }
+  }
+
+  const addHit = (filePath, maxChars, score, indexOnly) => {
+    const relativePath = path.relative(rootPath, filePath);
+    if (seen.has(relativePath)) {
+      return false;
+    }
+
+    try {
+      const fileStat = fs.statSync(filePath);
+      scannedFileCount += 1;
+      if (fileStat.size > MAX_KNOWLEDGE_FILE_BYTES) {
+        skippedOversized += 1;
+        return false;
+      }
+
+      hits.push(readKnowledgeFileHit(rootPath, filePath, maxChars, score, { indexOnly }));
+      seen.add(relativePath);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  for (const filePath of explicitFiles) {
+    if (explicitHitCount >= maxNotes) {
+      break;
+    }
+
+    if (addHit(filePath, maxCharsPerNote, Math.max(1, 1000 - explicitHitCount), false)) {
+      explicitHitCount += 1;
+    }
+  }
+
+  for (const directoryPath of directories) {
+    const files = collectKnowledgeFiles(directoryPath);
+    directoryFileCount += files.length;
+
+    for (const filePath of files) {
+      if (directoryHitCount >= maxDirectoryNotes) {
+        break;
+      }
+
+      if (addHit(filePath, directoryIndexCharsPerNote, Math.max(1, 800 - directoryHitCount), true)) {
+        directoryHitCount += 1;
+      }
+    }
+
+    if (directoryHitCount >= maxDirectoryNotes) {
+      break;
+    }
+  }
+
+  const messageParts = [];
+  if (explicitHitCount > 0) {
+    messageParts.push(`已读取 ${explicitHitCount} 篇精确选择笔记`);
+  }
+  if (directoryHitCount > 0) {
+    messageParts.push(`已建立 ${directoryHitCount} 篇目录笔记索引`);
+  }
+  if (directoryFileCount > directoryHitCount) {
+    messageParts.push(`目录内共发现 ${directoryFileCount} 篇，可在后续搜索中继续精确选章`);
+  }
+  if (skippedOversized > 0) {
+    messageParts.push(`跳过 ${skippedOversized} 个过大的 Markdown 文件`);
+  }
+  if (messageParts.length === 0) {
+    messageParts.push("没有读取到可用的 Markdown 笔记");
+  }
+
+  return {
+    vaultPath: rootPath,
+    query: directoryHitCount > 0 ? "手动选择的知识库目录索引" : "手动选择的知识库内容",
+    hits,
+    scannedFileCount,
+    message: messageParts.join("；")
   };
 }
 
@@ -1816,7 +2100,7 @@ ipcMain.handle("local-agents:models", async (_event, requests) => {
 ipcMain.handle("knowledge:select-vault", async (event) => {
   const owner = BrowserWindow.fromWebContents(event.sender);
   const result = await dialog.showOpenDialog(owner || undefined, {
-    title: "选择 Obsidian 知识库文件夹",
+    title: "选择 Obsidian 笔记目录",
     properties: ["openDirectory", "createDirectory"]
   });
 
@@ -1830,11 +2114,38 @@ ipcMain.handle("knowledge:search", (_event, request) => {
       query: "",
       hits: [],
       scannedFileCount: 0,
-      message: "请先选择 Obsidian 知识库文件夹"
+      message: "请先选择 Obsidian 笔记目录"
     };
   }
 
   return searchKnowledgeBase(request);
+});
+
+ipcMain.handle("knowledge:list", (_event, request) => {
+  if (!request || typeof request.vaultPath !== "string") {
+    return {
+      vaultPath: "",
+      relativePath: "",
+      entries: [],
+      message: "请先选择 Obsidian 笔记目录"
+    };
+  }
+
+  return listKnowledgeBaseEntries(request);
+});
+
+ipcMain.handle("knowledge:read-selection", (_event, request) => {
+  if (!request || typeof request.vaultPath !== "string" || !Array.isArray(request.items)) {
+    return {
+      vaultPath: "",
+      query: "手动选择的知识库内容",
+      hits: [],
+      scannedFileCount: 0,
+      message: "请先选择 Obsidian 笔记目录和笔记"
+    };
+  }
+
+  return readKnowledgeBaseSelection(request);
 });
 
 app.whenReady().then(() => {

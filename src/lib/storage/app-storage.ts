@@ -3,7 +3,7 @@ import type { Translator } from "@/lib/i18n";
 import { defaultLanguageCode, languageOptions } from "@/lib/languages";
 import { createBuiltinLocalProviders, refreshBuiltinLocalProvider } from "@/lib/local-agents";
 import { normalizeKnownProviderEndpoint } from "@/lib/providers";
-import type { AgentRole, AppState, ChatAttachment, ChatMessage, ChatRoom } from "@/lib/types";
+import type { AgentRole, AppState, ChatAttachment, ChatMessage, ChatRoom, RoomKnowledgeBaseSettings } from "@/lib/types";
 
 const STORAGE_KEY = "ai-roundtable-state-v1";
 
@@ -18,10 +18,34 @@ function normalizeState(value: Partial<AppState> | null): AppState {
     return fallback;
   }
 
+  const normalizeRoomKnowledgeBase = (room: Partial<ChatRoom>): RoomKnowledgeBaseSettings | undefined => {
+    const input = room.knowledgeBase;
+    if (!input || typeof input !== "object") {
+      return undefined;
+    }
+
+    return {
+      enabled: Boolean(input.enabled),
+      mode: input.mode === "selection" ? "selection" : "auto",
+      selectedItems: Array.isArray(input.selectedItems)
+        ? input.selectedItems
+            .filter((item) => item && (item.kind === "file" || item.kind === "directory") && typeof item.relativePath === "string")
+            .map((item) => ({
+              kind: item.kind,
+              relativePath: item.relativePath,
+              title: item.title || item.relativePath.split(/[\\/]/).pop() || item.relativePath
+            }))
+        : [],
+      maxNotes: Math.min(40, Math.max(1, Number(input.maxNotes || fallback.settings.knowledgeBase.maxNotes))),
+      maxCharsPerNote: Math.min(12000, Math.max(600, Number(input.maxCharsPerNote || fallback.settings.knowledgeBase.maxCharsPerNote)))
+    };
+  };
+
   const rooms: ChatRoom[] = Array.isArray(value.rooms) && value.rooms.length > 0
     ? value.rooms.map((room): ChatRoom => ({
         ...room,
         mode: room.mode === "private" ? "private" : "group",
+        knowledgeBase: normalizeRoomKnowledgeBase(room),
         contextMemory:
           room.contextMemory &&
           typeof room.contextMemory.summary === "string" &&
@@ -40,7 +64,7 @@ function normalizeState(value: Partial<AppState> | null): AppState {
     ...fallback.settings.knowledgeBase,
     ...(value.settings?.knowledgeBase || {}),
     kind: "obsidian" as const,
-    maxNotes: Math.min(12, Math.max(1, Number(value.settings?.knowledgeBase?.maxNotes || fallback.settings.knowledgeBase.maxNotes))),
+    maxNotes: Math.min(40, Math.max(1, Number(value.settings?.knowledgeBase?.maxNotes || fallback.settings.knowledgeBase.maxNotes))),
     maxCharsPerNote: Math.min(
       8000,
       Math.max(600, Number(value.settings?.knowledgeBase?.maxCharsPerNote || fallback.settings.knowledgeBase.maxCharsPerNote))

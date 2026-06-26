@@ -45,6 +45,7 @@ import type {
   ChatMessage,
   ChatRoom,
   KnowledgeBaseSearchResult,
+  KnowledgeBaseSelection,
   LocalAgentDetection,
   LocalAgentDetectionRequest,
   LocalAgentModelCatalog,
@@ -385,7 +386,7 @@ export function RoundtableApp() {
 
   const selectKnowledgeBaseVault = async () => {
     if (!window.roundtableDesktop?.selectKnowledgeBaseVault) {
-      window.alert("读取本地 Obsidian 知识库需要使用 AI圆桌桌面版。");
+      window.alert("选择本地 Obsidian 笔记目录需要使用 AI圆桌桌面版。");
       return;
     }
 
@@ -399,12 +400,12 @@ export function RoundtableApp() {
       enabled: true,
       vaultPath
     });
-    showNotice("已选择 Obsidian 知识库");
+    showNotice("已选择 Obsidian 笔记目录");
   };
 
   const formatKnowledgeSearchResult = (result: KnowledgeBaseSearchResult) => {
     const lines = [
-      "# Obsidian 知识库检索结果",
+      "# Obsidian 笔记目录检索结果",
       "",
       `检索词：${result.query || "当前圆桌主题"}`,
       `命中笔记：${result.hits.length} / 已扫描：${result.scannedFileCount}`,
@@ -426,43 +427,82 @@ export function RoundtableApp() {
     return lines.join("\n");
   };
 
-  const searchKnowledgeForTopic = async (query: string): Promise<ChatAttachment | undefined> => {
-    const knowledgeBase = stateRef.current.settings.knowledgeBase;
-    if (!knowledgeBase.enabled || !knowledgeBase.vaultPath) {
+  const buildKnowledgeAttachment = (result: KnowledgeBaseSearchResult, name: string): ChatAttachment | undefined => {
+    if (result.hits.length === 0) {
       return undefined;
     }
 
-    if (!window.roundtableDesktop?.searchKnowledgeBase) {
+    const extractedText = formatKnowledgeSearchResult(result);
+    return {
+      id: createId("attachment"),
+      name,
+      mimeType: "text/markdown",
+      size: extractedText.length,
+      kind: "text",
+      extractedText,
+      status: "ready",
+      createdAt: nowIso()
+    };
+  };
+
+  const searchKnowledgeForTopic = async (room: ChatRoom, query: string): Promise<ChatAttachment | undefined> => {
+    const knowledgeBase = stateRef.current.settings.knowledgeBase;
+    const roomKnowledgeBase = room.knowledgeBase;
+    const shouldUseKnowledge = roomKnowledgeBase?.enabled ?? Boolean(knowledgeBase.enabled && knowledgeBase.vaultPath);
+    if (!shouldUseKnowledge || !knowledgeBase.vaultPath) {
+      return undefined;
+    }
+
+    if (!window.roundtableDesktop?.searchKnowledgeBase || !window.roundtableDesktop?.readKnowledgeBaseSelection) {
       showNotice("桌面版才能读取本地知识库");
       return undefined;
     }
 
     try {
-      showNotice("正在检索 Obsidian 知识库...");
-      const result = await window.roundtableDesktop.searchKnowledgeBase({
-        vaultPath: knowledgeBase.vaultPath,
-        query,
-        limit: knowledgeBase.maxNotes,
-        maxCharsPerNote: knowledgeBase.maxCharsPerNote
-      });
+      const selectedItems = roomKnowledgeBase?.selectedItems || [];
+      const useSelection = roomKnowledgeBase?.mode === "selection";
+      const hasSelectedItems = selectedItems.length > 0;
+      const hasSelectedDirectory = selectedItems.some((item) => item.kind === "directory");
+      const limit = roomKnowledgeBase?.maxNotes || knowledgeBase.maxNotes;
+      const maxCharsPerNote = roomKnowledgeBase?.maxCharsPerNote || knowledgeBase.maxCharsPerNote;
 
-      if (result.hits.length === 0) {
-        showNotice("知识库没有匹配到相关笔记");
+      if (useSelection && !hasSelectedItems) {
+        showNotice("当前房间设置为只使用手动选择，但还没有选择笔记或目录");
         return undefined;
       }
 
-      const extractedText = formatKnowledgeSearchResult(result);
-      showNotice(`已读取 ${result.hits.length} 篇知识库笔记`);
-      return {
-        id: createId("attachment"),
-        name: "Obsidian 知识库检索.md",
-        mimeType: "text/markdown",
-        size: extractedText.length,
-        kind: "text",
-        extractedText,
-        status: "ready",
-        createdAt: nowIso()
-      };
+      showNotice(useSelection ? "正在读取手动选择的知识库笔记..." : "正在检索 Obsidian 知识库...");
+      const result =
+        useSelection
+          ? await window.roundtableDesktop.readKnowledgeBaseSelection({
+              vaultPath: knowledgeBase.vaultPath,
+              items: selectedItems,
+              maxNotes: limit,
+              maxCharsPerNote,
+              maxDirectoryNotes: 1000,
+              directoryIndexCharsPerNote: 420
+            })
+          : await window.roundtableDesktop.searchKnowledgeBase({
+              vaultPath: knowledgeBase.vaultPath,
+              query,
+              limit,
+              maxCharsPerNote
+            });
+
+      if (result.hits.length === 0) {
+        showNotice(useSelection ? "手动选择中没有可读取的 Markdown 笔记" : "知识库没有匹配到相关笔记");
+        return undefined;
+      }
+
+      showNotice(result.message || `已读取 ${result.hits.length} 篇知识库笔记`);
+      return buildKnowledgeAttachment(
+        result,
+        useSelection
+          ? hasSelectedDirectory
+            ? "Obsidian 全书目录索引.md"
+            : "Obsidian 手动选择笔记.md"
+          : "Obsidian 知识库检索.md"
+      );
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "知识库读取失败，请检查路径权限。");
       return undefined;
@@ -472,7 +512,7 @@ export function RoundtableApp() {
   const testKnowledgeBaseSearch = async () => {
     const knowledgeBase = stateRef.current.settings.knowledgeBase;
     if (!knowledgeBase.vaultPath) {
-      window.alert("请先选择 Obsidian 知识库文件夹。");
+      window.alert("请先选择 Obsidian 笔记目录。");
       return;
     }
 
@@ -498,7 +538,58 @@ export function RoundtableApp() {
     }
   };
 
-  const createRoom = (input: { name: string; mode: RoomMode; roleIds: string[]; defaultRounds: number }) => {
+  const listKnowledgeBaseEntries = async (relativePath = "") => {
+    const vaultPath = stateRef.current.settings.knowledgeBase.vaultPath;
+    if (!vaultPath || !window.roundtableDesktop?.listKnowledgeBaseEntries) {
+      return { vaultPath: "", relativePath: "", entries: [] };
+    }
+
+    return window.roundtableDesktop.listKnowledgeBaseEntries({ vaultPath, relativePath });
+  };
+
+  const searchKnowledgeBaseEntries = async (query: string): Promise<KnowledgeBaseSearchResult> => {
+    const vaultPath = stateRef.current.settings.knowledgeBase.vaultPath;
+    if (!vaultPath || !window.roundtableDesktop?.searchKnowledgeBase) {
+      return { vaultPath: "", query, hits: [], scannedFileCount: 0 };
+    }
+
+    return window.roundtableDesktop.searchKnowledgeBase({
+      vaultPath,
+      query,
+      limit: 40,
+      maxCharsPerNote: 1200
+    });
+  };
+
+  const updateRoomKnowledgeBase = (roomId: string, patch: Partial<NonNullable<ChatRoom["knowledgeBase"]>>) => {
+    setState((current) => ({
+      ...current,
+      rooms: current.rooms.map((room) => {
+        if (room.id !== roomId) {
+          return room;
+        }
+
+        const base = room.knowledgeBase || {
+          enabled: false,
+          mode: "auto" as const,
+          selectedItems: [] as KnowledgeBaseSelection[],
+          maxNotes: current.settings.knowledgeBase.maxNotes,
+          maxCharsPerNote: current.settings.knowledgeBase.maxCharsPerNote
+        };
+
+        return {
+          ...room,
+          knowledgeBase: {
+            ...base,
+            ...patch
+          },
+          updatedAt: nowIso()
+        };
+      })
+    }));
+  };
+
+  const createRoom = (input: { name: string; mode: RoomMode; roleIds: string[]; defaultRounds: number; knowledgeBase?: ChatRoom["knowledgeBase"] }) => {
     const timestamp = nowIso();
     const room: ChatRoom = {
       id: createId("room"),
@@ -507,6 +598,7 @@ export function RoundtableApp() {
       roleIds: input.roleIds,
       defaultRounds: input.defaultRounds,
       messages: [],
+      knowledgeBase: input.knowledgeBase,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -711,7 +803,7 @@ export function RoundtableApp() {
     let messages = room.messages;
     let contextMemory = room.contextMemory;
     if (topic || attachments.length > 0) {
-      const knowledgeAttachment = await searchKnowledgeForTopic(topic || room.name);
+      const knowledgeAttachment = await searchKnowledgeForTopic(room, topic || room.name);
       const discussionAttachments = knowledgeAttachment ? [...attachments, knowledgeAttachment] : attachments;
       messages = [...messages, makeUserMessage(room.id, topic || t("defaultAttachmentTopic"), discussionAttachments)];
       commitMessages(room.id, messages);
@@ -1090,11 +1182,17 @@ export function RoundtableApp() {
                 room={activeRoom}
                 roles={state.roles}
                 providers={state.providers}
+                knowledgeBase={state.settings.knowledgeBase}
+                isDesktopApp={isDesktopApp}
                 localAgentModelCatalogs={localAgentModelCatalogs}
                 isRunning={isRunning}
                 speakingRoleId={speakingRoleId}
                 onUpdateRoom={updateRoom}
+                onUpdateRoomKnowledgeBase={updateRoomKnowledgeBase}
                 onUpdateRoleModel={updateRoleModel}
+                onSelectKnowledgeBase={() => void selectKnowledgeBaseVault()}
+                onListKnowledgeBaseEntries={listKnowledgeBaseEntries}
+                onSearchKnowledgeBase={searchKnowledgeBaseEntries}
                 onStart={(topic, rounds, attachments) => void runDiscussion(rounds, topic, attachments)}
                 onContinue={(rounds) => void runDiscussion(rounds)}
                 onStop={stopDiscussion}
@@ -1151,12 +1249,15 @@ export function RoundtableApp() {
               open={newRoomOpen}
               mode={newRoomMode}
               roles={state.roles}
+              knowledgeBase={state.settings.knowledgeBase}
+              isDesktopApp={isDesktopApp}
               defaultName={
                 newRoomMode === "private"
                   ? t("newPrivateRoomName", { count: state.rooms.length + 1 })
                   : t("newRoundtableName", { count: state.rooms.length + 1 })
               }
               onClose={() => setNewRoomOpen(false)}
+              onSelectKnowledgeBase={() => void selectKnowledgeBaseVault()}
               onCreate={createRoom}
             />
 

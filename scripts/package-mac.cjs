@@ -8,8 +8,12 @@ const packageJson = require(path.join(root, "package.json"));
 const productName = packageJson.productName || "AI圆桌";
 const appId = "cn.ai-roundtable.desktop";
 const releaseDir = path.join(root, "release");
-const electronCacheDir = path.join(os.homedir(), "Library", "Caches", "electron");
-const arch = os.arch() === "arm64" ? "arm64" : "x64";
+const electronCacheDirs = [
+  path.join(os.homedir(), "Library", "Caches", "electron"),
+  path.join("/private", "tmp", "ai-roundtable-electron-cache")
+];
+const arch = process.env.TARGET_ARCH || (os.arch() === "arm64" ? "arm64" : "x64");
+const target = `darwin-${arch}`;
 const appPath = path.join(releaseDir, `${productName}.app`);
 const dmgPath = path.join(releaseDir, `${productName}-${packageJson.version}-${arch}.dmg`);
 const zipPath = path.join(releaseDir, `${productName}-${packageJson.version}-${arch}.zip`);
@@ -19,7 +23,11 @@ function fail(message) {
   process.exit(1);
 }
 
-function findElectronZip(dir) {
+if (!["x64", "arm64"].includes(arch)) {
+  fail("TARGET_ARCH 只能是 x64 或 arm64。");
+}
+
+function findElectronZip(dir, platformTarget = target) {
   if (!fs.existsSync(dir)) {
     return undefined;
   }
@@ -35,7 +43,7 @@ function findElectronZip(dir) {
       const fullPath = path.join(current, entry.name);
       if (entry.isDirectory()) {
         walk(fullPath, depth + 1);
-      } else if (entry.isFile() && entry.name.startsWith("electron-v") && entry.name.endsWith(`darwin-${arch}.zip`)) {
+      } else if (entry.isFile() && entry.name.startsWith("electron-v") && entry.name.endsWith(`${platformTarget}.zip`)) {
         matches.push(fullPath);
       }
     }
@@ -44,6 +52,42 @@ function findElectronZip(dir) {
   walk(dir);
   matches.sort();
   return matches.at(-1);
+}
+
+function detectElectronVersion() {
+  const anyZip = electronCacheDirs
+    .map((dir) => findElectronZip(dir, "darwin-x64") || findElectronZip(dir, "darwin-arm64") || findElectronZip(dir, "win32-x64"))
+    .find(Boolean);
+  const match = anyZip?.match(/electron-v([^/]+?)-/);
+  return process.env.ELECTRON_VERSION || match?.[1] || "42.2.0";
+}
+
+function downloadElectronZip(version) {
+  const cacheDir = path.join(electronCacheDirs[1], "ai-roundtable");
+  const targetZip = path.join(cacheDir, `electron-v${version}-${target}.zip`);
+
+  if (fs.existsSync(targetZip)) {
+    return targetZip;
+  }
+
+  fs.mkdirSync(cacheDir, { recursive: true });
+
+  const urls = [
+    `https://github.com/electron/electron/releases/download/v${version}/electron-v${version}-${target}.zip`,
+    `https://npmmirror.com/mirrors/electron/${version}/electron-v${version}-${target}.zip`
+  ];
+
+  for (const url of urls) {
+    try {
+      console.log(`下载 Electron macOS 运行时：${url}`);
+      run("curl", ["-L", "--fail", "--retry", "2", "-o", targetZip, url]);
+      return targetZip;
+    } catch {
+      fs.rmSync(targetZip, { force: true });
+    }
+  }
+
+  fail("无法下载 Electron macOS 运行时。请检查网络后重试，或手动放入缓存目录。");
 }
 
 function run(command, args, options = {}) {
@@ -129,13 +173,14 @@ function packageArtifacts() {
   }
 }
 
-const electronZip = findElectronZip(electronCacheDir);
+const version = detectElectronVersion();
+const electronZip = electronCacheDirs.map((dir) => findElectronZip(dir)).find(Boolean) || downloadElectronZip(version);
 
 if (!electronZip) {
   fail(
     [
       "没有找到本地 Electron macOS 运行时缓存，无法离线生成桌面应用。",
-      `请先安装 Electron，或把 electron-v*-darwin-${arch}.zip 放到 ${electronCacheDir} 后重试。`
+      `请先安装 Electron，或把 electron-v*-${target}.zip 放到 ${electronCacheDirs[0]} 后重试。`
     ].join("\n")
   );
 }

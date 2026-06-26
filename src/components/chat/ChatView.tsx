@@ -2,12 +2,16 @@
 
 import {
   ArrowUp,
+  BookOpen,
   Check,
   ChevronDown,
+  FileText,
   FileUp,
+  Folder,
   Paperclip,
   Pencil,
   RotateCcw,
+  Search,
   Sparkles,
   Square,
   Trash2,
@@ -17,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import {
   ACCEPTED_CHAT_ATTACHMENT_TYPES,
   createChatAttachment,
@@ -30,6 +35,11 @@ import type {
   ChatAttachment,
   ChatMessage,
   ChatRoom,
+  KnowledgeBaseEntry,
+  KnowledgeBaseListResult,
+  KnowledgeBaseSearchResult,
+  KnowledgeBaseSelection,
+  KnowledgeBaseSettings,
   LocalAgentModelCatalog,
   ProviderConfig
 } from "@/lib/types";
@@ -39,11 +49,17 @@ interface ChatViewProps {
   room: ChatRoom;
   roles: AgentRole[];
   providers: ProviderConfig[];
+  knowledgeBase: KnowledgeBaseSettings;
+  isDesktopApp: boolean;
   localAgentModelCatalogs: LocalAgentModelCatalog[];
   isRunning: boolean;
   speakingRoleId?: string;
   onUpdateRoom: (room: ChatRoom) => void;
+  onUpdateRoomKnowledgeBase: (roomId: string, patch: Partial<NonNullable<ChatRoom["knowledgeBase"]>>) => void;
   onUpdateRoleModel: (roleId: string, model: string) => void;
+  onSelectKnowledgeBase: () => void;
+  onListKnowledgeBaseEntries: (relativePath?: string) => Promise<KnowledgeBaseListResult>;
+  onSearchKnowledgeBase: (query: string) => Promise<KnowledgeBaseSearchResult>;
   onStart: (topic: string, rounds: number, attachments?: ChatAttachment[]) => void;
   onContinue: (rounds: number) => void;
   onStop: () => void;
@@ -57,11 +73,17 @@ export function ChatView({
   room,
   roles,
   providers,
+  knowledgeBase,
+  isDesktopApp,
   localAgentModelCatalogs,
   isRunning,
   speakingRoleId,
   onUpdateRoom,
+  onUpdateRoomKnowledgeBase,
   onUpdateRoleModel,
+  onSelectKnowledgeBase,
+  onListKnowledgeBaseEntries,
+  onSearchKnowledgeBase,
   onStart,
   onContinue,
   onStop,
@@ -77,6 +99,12 @@ export function ChatView({
   const [mentionQuery, setMentionQuery] = useState<string | undefined>();
   const [mentionStart, setMentionStart] = useState<number | undefined>();
   const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [knowledgeList, setKnowledgeList] = useState<KnowledgeBaseListResult | undefined>();
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+  const [knowledgeSearchQuery, setKnowledgeSearchQuery] = useState("");
+  const [knowledgeSearchResult, setKnowledgeSearchResult] = useState<KnowledgeBaseSearchResult | undefined>();
+  const [knowledgeSearching, setKnowledgeSearching] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -89,6 +117,9 @@ export function ChatView({
   );
   const enabledSelectedRoles = selectedRoles.filter((role) => role.enabled);
   const speakingRole = roles.find((role) => role.id === speakingRoleId);
+  const selectedKnowledgeItems = room.knowledgeBase?.selectedItems || [];
+  const knowledgeEnabled = room.knowledgeBase?.enabled ?? Boolean(knowledgeBase.enabled && knowledgeBase.vaultPath);
+  const knowledgeMode = room.knowledgeBase?.mode || "auto";
   const modelCatalogByProviderId = useMemo(
     () => new Map(localAgentModelCatalogs.map((catalog) => [catalog.id, catalog])),
     [localAgentModelCatalogs]
@@ -112,6 +143,167 @@ export function ChatView({
     setRoomNameDraft(room.name);
     setEditingRoomName(false);
   }, [room.id, room.name]);
+
+  useEffect(() => {
+    if (!knowledgeOpen || !knowledgeBase.vaultPath) {
+      return;
+    }
+
+    setKnowledgeSearchQuery("");
+    setKnowledgeSearchResult(undefined);
+    void loadKnowledgeEntries("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [knowledgeOpen, knowledgeBase.vaultPath]);
+
+  const loadKnowledgeEntries = async (relativePath = "") => {
+    setKnowledgeLoading(true);
+    try {
+      setKnowledgeList(await onListKnowledgeBaseEntries(relativePath));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "知识库目录读取失败。");
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  };
+
+  const openKnowledgeSelector = () => {
+    if (!isDesktopApp) {
+      window.alert("选择本地知识库笔记需要使用 AI圆桌桌面版。");
+      return;
+    }
+    if (!knowledgeBase.vaultPath) {
+      onSelectKnowledgeBase();
+      return;
+    }
+    setKnowledgeOpen(true);
+  };
+
+  const updateKnowledge = (patch: Partial<NonNullable<ChatRoom["knowledgeBase"]>>) => {
+    onUpdateRoomKnowledgeBase(room.id, {
+      enabled: knowledgeEnabled,
+      mode: knowledgeMode,
+      selectedItems: selectedKnowledgeItems,
+      maxNotes: room.knowledgeBase?.maxNotes || knowledgeBase.maxNotes,
+      maxCharsPerNote: room.knowledgeBase?.maxCharsPerNote || knowledgeBase.maxCharsPerNote,
+      ...patch
+    });
+  };
+
+  const toggleKnowledgeSelection = (selection: KnowledgeBaseSelection) => {
+    const exists = selectedKnowledgeItems.some((item) => item.kind === selection.kind && item.relativePath === selection.relativePath);
+    const nextItems = exists
+      ? selectedKnowledgeItems.filter((item) => !(item.kind === selection.kind && item.relativePath === selection.relativePath))
+      : [...selectedKnowledgeItems, selection];
+
+    updateKnowledge({
+      enabled: true,
+      mode: "selection",
+      selectedItems: nextItems
+    });
+  };
+
+  const toggleKnowledgeItem = (entry: KnowledgeBaseEntry) => {
+    toggleKnowledgeSelection({ kind: entry.kind, relativePath: entry.relativePath, title: entry.title });
+  };
+
+  const removeKnowledgeItem = (item: KnowledgeBaseSelection) => {
+    updateKnowledge({
+      selectedItems: selectedKnowledgeItems.filter(
+        (candidate) => !(candidate.kind === item.kind && candidate.relativePath === item.relativePath)
+      )
+    });
+  };
+
+  const parentKnowledgePath = (relativePath: string) => {
+    const parts = relativePath.split(/[\\/]/).filter(Boolean);
+    parts.pop();
+    return parts.join("/");
+  };
+
+  const knowledgeSelectionSummary = () => {
+    const fileCount = selectedKnowledgeItems.filter((item) => item.kind === "file").length;
+    const directoryCount = selectedKnowledgeItems.filter((item) => item.kind === "directory").length;
+    const parts = [
+      directoryCount > 0 ? `${directoryCount} 个文件夹` : "",
+      fileCount > 0 ? `${fileCount} 篇笔记` : ""
+    ].filter(Boolean);
+
+    return parts.length > 0 ? parts.join(" + ") : "自动检索";
+  };
+
+  const selectedItemKey = (item: Pick<KnowledgeBaseSelection, "kind" | "relativePath">) => `${item.kind}:${item.relativePath}`;
+
+  const mergeKnowledgeItems = (items: KnowledgeBaseSelection[]) => {
+    const merged = new Map(selectedKnowledgeItems.map((item) => [selectedItemKey(item), item]));
+    items.forEach((item) => merged.set(selectedItemKey(item), item));
+    updateKnowledge({
+      enabled: true,
+      mode: "selection",
+      selectedItems: Array.from(merged.values())
+    });
+  };
+
+  const selectCurrentKnowledgeDirectory = () => {
+    const relativePath = knowledgeList?.relativePath || ".";
+    const title =
+      relativePath === "."
+        ? "全部知识库"
+        : relativePath.split(/[\\/]/).filter(Boolean).at(-1) || relativePath;
+
+    mergeKnowledgeItems([
+      {
+        kind: "directory",
+        relativePath,
+        title
+      }
+    ]);
+  };
+
+  const selectVisibleKnowledgeEntries = () => {
+    const entries = knowledgeList?.entries || [];
+    if (entries.length === 0) {
+      return;
+    }
+
+    mergeKnowledgeItems(entries.map((entry) => ({
+      kind: entry.kind,
+      relativePath: entry.relativePath,
+      title: entry.title
+    })));
+  };
+
+  const searchKnowledgeEntries = async () => {
+    const query = knowledgeSearchQuery.trim();
+    if (!query) {
+      return;
+    }
+
+    setKnowledgeSearching(true);
+    try {
+      setKnowledgeSearchResult(await onSearchKnowledgeBase(query));
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "知识库搜索失败。");
+    } finally {
+      setKnowledgeSearching(false);
+    }
+  };
+
+  const toggleKnowledgeSearchHit = (hit: KnowledgeBaseSearchResult["hits"][number]) => {
+    toggleKnowledgeSelection({ kind: "file", relativePath: hit.relativePath, title: hit.title });
+  };
+
+  const selectKnowledgeSearchResults = () => {
+    const hits = knowledgeSearchResult?.hits || [];
+    if (hits.length === 0) {
+      return;
+    }
+
+    mergeKnowledgeItems(hits.map((hit) => ({
+      kind: "file",
+      relativePath: hit.relativePath,
+      title: hit.title
+    })));
+  };
 
   const saveRoomName = () => {
     const nextName = roomNameDraft.trim();
@@ -309,6 +501,14 @@ export function ChatView({
                 <span className="inline-flex items-center gap-1 text-emerald-700">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   {t("localSave")}
+                </span>
+                <span className={`inline-flex items-center gap-1 ${knowledgeEnabled ? "text-[var(--accent)]" : "text-[var(--muted)]"}`}>
+                  <BookOpen className="h-3 w-3" />
+                  {knowledgeEnabled
+                    ? knowledgeMode === "selection" && selectedKnowledgeItems.length > 0
+                      ? `知识库 ${knowledgeSelectionSummary()}`
+                      : "知识库自动检索"
+                    : "知识库关闭"}
                 </span>
                 {speakingRole ? (
                   <span className="inline-flex items-center gap-1 font-medium text-[var(--accent)]">
@@ -516,6 +716,21 @@ export function ChatView({
                 ))}
               </div>
             ) : null}
+            {knowledgeEnabled ? (
+              <button
+                type="button"
+                className="mb-2 flex max-w-full items-center gap-2 rounded-[9px] border border-[var(--accent-border)] bg-[var(--accent-soft)] px-3 py-1.5 text-left text-xs text-[var(--accent-strong)] transition hover:bg-white/70"
+                onClick={openKnowledgeSelector}
+                title="点击管理知识库来源"
+              >
+                <BookOpen className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">
+                  {knowledgeMode === "selection" && selectedKnowledgeItems.length > 0
+                    ? `知识库已选：${knowledgeSelectionSummary()}`
+                    : "知识库：自动按话题检索"}
+                </span>
+              </button>
+            ) : null}
             <div className="mt-1.5 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line-soft)] pt-2.5">
               <div className="flex flex-wrap items-center gap-2">
                 <input
@@ -535,6 +750,16 @@ export function ChatView({
                 >
                   <Paperclip className="h-4 w-4" />
                   {t("uploadAttachment")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant={knowledgeEnabled ? "primary" : "secondary"}
+                  title="选择知识库笔记或文件夹"
+                  disabled={isRunning}
+                  onClick={openKnowledgeSelector}
+                >
+                  <BookOpen className="h-4 w-4" />
+                  知识库
                 </Button>
                 {room.messages.length > 0 ? (
                   <>
@@ -573,6 +798,196 @@ export function ChatView({
           </div>
         </footer>
       </section>
+      <Modal title="选择知识库内容" description="选择自动检索，或精确勾选要参与本房间讨论的笔记和文件夹。" open={knowledgeOpen} onClose={() => setKnowledgeOpen(false)}>
+        <div className="space-y-4">
+          <div className="rounded-[12px] border border-[var(--line)] bg-[var(--surface-muted)] p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <label className="flex items-center gap-2 text-sm text-[var(--ink-soft)]">
+                <input
+                  type="checkbox"
+                  checked={knowledgeEnabled}
+                  className="h-4 w-4 accent-[var(--accent)]"
+                  onChange={(event) => updateKnowledge({ enabled: event.target.checked })}
+                />
+                当前房间使用知识库
+              </label>
+              <select
+                className="field-control h-9 rounded-[9px] border px-3 text-xs outline-none transition focus:ring-[3px]"
+                value={knowledgeMode}
+                disabled={!knowledgeEnabled}
+                onChange={(event) => updateKnowledge({ mode: event.target.value as NonNullable<ChatRoom["knowledgeBase"]>["mode"] })}
+              >
+                <option value="auto">自动按话题检索</option>
+                <option value="selection">只使用手动选择</option>
+              </select>
+            </div>
+            <div className="mt-2 truncate font-mono text-[11px] text-[var(--muted)]">
+              {knowledgeBase.vaultPath || "尚未选择笔记目录"}
+            </div>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-[1.25fr_1fr]">
+            <div className="min-w-0">
+              <form
+                className="mb-4 rounded-[12px] border border-[var(--line)] bg-[var(--surface-strong)] p-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void searchKnowledgeEntries();
+                }}
+              >
+                <div className="flex gap-2">
+                  <input
+                    value={knowledgeSearchQuery}
+                    onChange={(event) => setKnowledgeSearchQuery(event.target.value)}
+                    className="field-control h-9 min-w-0 flex-1 rounded-[9px] border px-3 text-sm outline-none transition focus:ring-[3px]"
+                    placeholder="搜索文件名、摘要、人物、标签或事件"
+                    disabled={!knowledgeEnabled}
+                  />
+                  <Button type="submit" size="sm" variant="primary" disabled={!knowledgeEnabled || knowledgeSearching || !knowledgeSearchQuery.trim()}>
+                    <Search className="h-3.5 w-3.5" />
+                    {knowledgeSearching ? "搜索中" : "搜索"}
+                  </Button>
+                </div>
+
+                {knowledgeSearchResult ? (
+                  <div className="mt-3 border-t border-[var(--line)] pt-3">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted)]">
+                      <span>
+                        {knowledgeSearchResult.hits.length > 0
+                          ? `找到 ${knowledgeSearchResult.hits.length} 篇 · 扫描 ${knowledgeSearchResult.scannedFileCount} 篇`
+                          : `未找到匹配 · 扫描 ${knowledgeSearchResult.scannedFileCount} 篇`}
+                      </span>
+                      {knowledgeSearchResult.hits.length > 0 ? (
+                        <Button type="button" size="sm" variant="secondary" onClick={selectKnowledgeSearchResults}>
+                          全选搜索结果
+                        </Button>
+                      ) : null}
+                    </div>
+                    {knowledgeSearchResult.hits.length > 0 ? (
+                      <div className="max-h-48 overflow-y-auto pr-1 scrollbar-thin">
+                        <div className="space-y-1">
+                          {knowledgeSearchResult.hits.map((hit) => {
+                            const checked = selectedKnowledgeItems.some((item) => item.kind === "file" && item.relativePath === hit.relativePath);
+                            return (
+                              <label
+                                key={hit.relativePath}
+                                className="flex min-w-0 cursor-pointer gap-2 rounded-[9px] px-2 py-1.5 text-sm text-[var(--ink-soft)] hover:bg-[var(--surface-muted)]"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]"
+                                  onChange={() => toggleKnowledgeSearchHit(hit)}
+                                />
+                                <FileText className="mt-0.5 h-4 w-4 shrink-0 text-[var(--muted)]" />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate font-medium">{hit.title}</span>
+                                  <span className="block truncate font-mono text-[10px] text-[var(--muted)]" title={hit.relativePath}>
+                                    {hit.relativePath}
+                                  </span>
+                                  <span className="mt-1 block max-h-8 overflow-hidden text-[11px] leading-4 text-[var(--muted)]">
+                                    {hit.excerpt}
+                                  </span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="px-2 py-4 text-center text-sm text-[var(--muted)]">换个关键词试试。</div>
+                    )}
+                  </div>
+                ) : null}
+              </form>
+
+              <div className="mb-3 space-y-2">
+                <div className="truncate text-xs font-semibold text-[var(--muted)]">
+                  {knowledgeList?.relativePath ? `当前：${knowledgeList.relativePath}` : "当前：根目录"}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {knowledgeList?.relativePath ? (
+                    <Button size="sm" variant="ghost" onClick={() => void loadKnowledgeEntries(parentKnowledgePath(knowledgeList.relativePath))}>
+                      上一级
+                    </Button>
+                  ) : null}
+                  <Button size="sm" variant="secondary" onClick={selectCurrentKnowledgeDirectory} disabled={!knowledgeList}>
+                    选择当前目录
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={selectVisibleKnowledgeEntries} disabled={!knowledgeList?.entries.length}>
+                    全选当前列表
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={onSelectKnowledgeBase}>
+                    换目录
+                  </Button>
+                </div>
+              </div>
+              <div className="max-h-80 overflow-y-auto rounded-[12px] border border-[var(--line)] bg-[var(--surface-strong)] p-2 scrollbar-thin">
+                {knowledgeLoading ? (
+                  <div className="px-3 py-8 text-center text-sm text-[var(--muted)]">正在读取目录...</div>
+                ) : knowledgeList?.entries.length ? (
+                  <div className="space-y-1">
+                    {knowledgeList.entries.map((entry) => {
+                      const checked = selectedKnowledgeItems.some((item) => item.kind === entry.kind && item.relativePath === entry.relativePath);
+                      return (
+                        <div key={`${entry.kind}:${entry.relativePath}`} className="flex items-center gap-2 rounded-[9px] px-2 py-1.5 hover:bg-[var(--surface-muted)]">
+                          <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-[var(--ink-soft)]">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              className="h-4 w-4 accent-[var(--accent)]"
+                              onChange={() => toggleKnowledgeItem(entry)}
+                            />
+                            {entry.kind === "directory" ? <Folder className="h-4 w-4 shrink-0 text-[var(--accent)]" /> : <FileText className="h-4 w-4 shrink-0 text-[var(--muted)]" />}
+                            <span className="truncate">{entry.title}</span>
+                          </label>
+                          {entry.kind === "directory" ? (
+                            <Button size="sm" variant="ghost" onClick={() => void loadKnowledgeEntries(entry.relativePath)}>
+                              进入
+                            </Button>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="px-3 py-8 text-center text-sm text-[var(--muted)]">这个目录下没有 Markdown 笔记。</div>
+                )}
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <div className="mb-2 text-xs font-semibold text-[var(--muted)]">已选知识来源</div>
+              <div className="max-h-80 overflow-y-auto rounded-[12px] border border-[var(--line)] bg-[var(--surface-strong)] p-2 scrollbar-thin">
+                {selectedKnowledgeItems.length === 0 ? (
+                  <div className="px-3 py-8 text-center text-sm text-[var(--muted)]">未选择具体笔记时，可使用自动检索。</div>
+                ) : (
+                  <div className="space-y-1">
+                    {selectedKnowledgeItems.map((item) => (
+                      <div key={`${item.kind}:${item.relativePath}`} className="flex items-center gap-2 rounded-[9px] px-2 py-1.5 text-sm text-[var(--ink-soft)]">
+                        {item.kind === "directory" ? <Folder className="h-4 w-4 shrink-0 text-[var(--accent)]" /> : <FileText className="h-4 w-4 shrink-0 text-[var(--muted)]" />}
+                        <span className="min-w-0 flex-1 truncate" title={item.relativePath}>{item.title}</span>
+                        <Button className="h-7 w-7 rounded-lg" size="icon" variant="ghost" title="移除" onClick={() => removeKnowledgeItem(item)}>
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-[var(--line)] pt-4">
+            <Button type="button" variant="ghost" onClick={() => updateKnowledge({ selectedItems: [], mode: "auto" })}>
+              清空选择
+            </Button>
+            <Button type="button" variant="primary" onClick={() => setKnowledgeOpen(false)}>
+              完成
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

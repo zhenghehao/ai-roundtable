@@ -1,6 +1,9 @@
 import type {
+  KnowledgeBaseListRequest,
+  KnowledgeBaseListResult,
   KnowledgeBaseSearchRequest,
   KnowledgeBaseSearchResult,
+  KnowledgeBaseSelectionReadRequest,
   LocalAgentDetection,
   LocalAgentDetectionRequest,
   LocalAgentModelCatalog,
@@ -18,6 +21,8 @@ declare global {
       listLocalAgentModels: (requests: LocalAgentModelRequest[]) => Promise<LocalAgentModelCatalog[]>;
       selectKnowledgeBaseVault: () => Promise<string | undefined>;
       searchKnowledgeBase: (request: KnowledgeBaseSearchRequest) => Promise<KnowledgeBaseSearchResult>;
+      listKnowledgeBaseEntries: (request: KnowledgeBaseListRequest) => Promise<KnowledgeBaseListResult>;
+      readKnowledgeBaseSelection: (request: KnowledgeBaseSelectionReadRequest) => Promise<KnowledgeBaseSearchResult>;
     };
   }
 }

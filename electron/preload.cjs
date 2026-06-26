@@ -6,5 +6,7 @@ contextBridge.exposeInMainWorld("roundtableDesktop", {
   detectLocalAgents: (requests) => ipcRenderer.invoke("local-agents:detect", requests),
   listLocalAgentModels: (requests) => ipcRenderer.invoke("local-agents:models", requests),
   selectKnowledgeBaseVault: () => ipcRenderer.invoke("knowledge:select-vault"),
-  searchKnowledgeBase: (request) => ipcRenderer.invoke("knowledge:search", request)
+  searchKnowledgeBase: (request) => ipcRenderer.invoke("knowledge:search", request),
+  listKnowledgeBaseEntries: (request) => ipcRenderer.invoke("knowledge:list", request),
+  readKnowledgeBaseSelection: (request) => ipcRenderer.invoke("knowledge:read-selection", request)
 });

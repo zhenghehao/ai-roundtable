@@ -8,6 +8,8 @@
     "dev": "NEXT_STATIC_EXPORT=0 WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=true next dev",
     "build": "next build",
     "dist:mac": "npm run build && node scripts/package-mac.cjs",
+    "dist:mac:intel": "npm run build && TARGET_ARCH=x64 node scripts/package-mac.cjs",
+    "dist:mac:apple": "npm run build && TARGET_ARCH=arm64 node scripts/package-mac.cjs",
     "dist:win": "npm run build && node scripts/package-win.cjs",
     "start": "next start",
     "typecheck": "tsc --noEmit"

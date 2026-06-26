@@ -1,6 +1,6 @@
 "use client";
 
-import { GripVertical } from "lucide-react";
+import { BookOpen, GripVertical } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { RoleAvatar } from "@/components/roles/RoleAvatar";
 import { Button } from "@/components/ui/Button";
@@ -8,7 +8,7 @@ import { Field, TextInput } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
 import { FILE_MASTER_ROLE_ID } from "@/lib/defaults";
 import { useI18n } from "@/lib/i18n-context";
-import type { AgentRole, RoomMode } from "@/lib/types";
+import type { AgentRole, KnowledgeBaseSettings, RoomKnowledgeBaseSettings, RoomMode } from "@/lib/types";
 import { clampRounds, cn } from "@/lib/utils";
 
 interface NewRoomDialogProps {
@@ -16,11 +16,24 @@ interface NewRoomDialogProps {
   mode: RoomMode;
   roles: AgentRole[];
   defaultName: string;
+  knowledgeBase: KnowledgeBaseSettings;
+  isDesktopApp: boolean;
   onClose: () => void;
-  onCreate: (input: { name: string; mode: RoomMode; roleIds: string[]; defaultRounds: number }) => void;
+  onSelectKnowledgeBase: () => void;
+  onCreate: (input: { name: string; mode: RoomMode; roleIds: string[]; defaultRounds: number; knowledgeBase?: RoomKnowledgeBaseSettings }) => void;
 }
 
-export function NewRoomDialog({ open, mode, roles, defaultName, onClose, onCreate }: NewRoomDialogProps) {
+export function NewRoomDialog({
+  open,
+  mode,
+  roles,
+  defaultName,
+  knowledgeBase,
+  isDesktopApp,
+  onClose,
+  onSelectKnowledgeBase,
+  onCreate
+}: NewRoomDialogProps) {
   const { t } = useI18n();
   const enabledRoleIds = useMemo(() => roles.filter((role) => role.enabled).map((role) => role.id), [roles]);
   const defaultGroupRoleIds = useMemo(
@@ -32,6 +45,8 @@ export function NewRoomDialog({ open, mode, roles, defaultName, onClose, onCreat
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>(enabledRoleIds);
   const [draggingRoleId, setDraggingRoleId] = useState<string | undefined>();
   const [rounds, setRounds] = useState(2);
+  const [knowledgeEnabled, setKnowledgeEnabled] = useState(false);
+  const [knowledgeMode, setKnowledgeMode] = useState<RoomKnowledgeBaseSettings["mode"]>("auto");
   const orderedRoles = useMemo(() => {
     const selectedRoles = selectedRoleIds
       .map((roleId) => roles.find((role) => role.id === roleId))
@@ -49,8 +64,10 @@ export function NewRoomDialog({ open, mode, roles, defaultName, onClose, onCreat
     setName(defaultName);
     setSelectedRoleIds(isPrivate ? enabledRoleIds.slice(0, 1) : defaultGroupRoleIds);
     setRounds(isPrivate ? 1 : 2);
+    setKnowledgeEnabled(Boolean(knowledgeBase.enabled && knowledgeBase.vaultPath));
+    setKnowledgeMode("auto");
     setDraggingRoleId(undefined);
-  }, [defaultGroupRoleIds, defaultName, enabledRoleIds, isPrivate, open]);
+  }, [defaultGroupRoleIds, defaultName, enabledRoleIds, isPrivate, knowledgeBase.enabled, knowledgeBase.vaultPath, open]);
 
   const toggleRole = (roleId: string) => {
     if (isPrivate) {
@@ -97,7 +114,14 @@ export function NewRoomDialog({ open, mode, roles, defaultName, onClose, onCreat
       name: name.trim() || defaultName,
       mode,
       roleIds: finalRoleIds,
-      defaultRounds: clampRounds(rounds)
+      defaultRounds: clampRounds(rounds),
+      knowledgeBase: {
+        enabled: knowledgeEnabled && Boolean(knowledgeBase.vaultPath),
+        mode: knowledgeMode,
+        selectedItems: [],
+        maxNotes: knowledgeBase.maxNotes,
+        maxCharsPerNote: knowledgeBase.maxCharsPerNote
+      }
     });
   };
 
@@ -131,6 +155,49 @@ export function NewRoomDialog({ open, mode, roles, defaultName, onClose, onCreat
             </select>
           </Field>
         </div>
+
+        <section className="rounded-[13px] border border-[var(--line)] bg-[var(--surface-muted)] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[var(--accent-soft)] text-[var(--accent)]">
+                <BookOpen className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-gray-950">知识库参与讨论</h3>
+                <p className="mt-1 text-xs leading-5 text-gray-500">
+                  {knowledgeBase.vaultPath ? `当前目录：${knowledgeBase.vaultPath}` : "先选择 Obsidian 笔记目录，之后这个房间才能读取知识库。"}
+                </p>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 rounded-[10px] border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2 text-xs text-[var(--ink-soft)]">
+              <input
+                type="checkbox"
+                checked={knowledgeEnabled}
+                disabled={!isDesktopApp || !knowledgeBase.vaultPath}
+                className="h-4 w-4 accent-[var(--accent)]"
+                onChange={(event) => setKnowledgeEnabled(event.target.checked)}
+              />
+              使用知识库
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <select
+              className="field-control h-9 rounded-[9px] border px-3 text-xs outline-none transition focus:ring-[3px]"
+              value={knowledgeMode}
+              disabled={!knowledgeEnabled}
+              onChange={(event) => setKnowledgeMode(event.target.value as RoomKnowledgeBaseSettings["mode"])}
+            >
+              <option value="auto">自动按话题检索</option>
+              <option value="selection">只使用手动选择的笔记</option>
+            </select>
+            <Button type="button" size="sm" variant="secondary" onClick={onSelectKnowledgeBase} disabled={!isDesktopApp}>
+              选择笔记目录
+            </Button>
+            {knowledgeMode === "selection" ? (
+              <span className="text-xs text-[var(--muted)]">创建后可在聊天输入区点“知识库”选择具体文件或文件夹。</span>
+            ) : null}
+          </div>
+        </section>
 
         <div>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
